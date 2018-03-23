@@ -7,14 +7,13 @@ import "../token/ERC20TokenInterface.sol";
 contract TeamContracts is TeamsStorageController {
 
     event TeamCreated(uint indexed teamId);
-    event TeamMemberAdded(uint indexed teamId, address memberAccount, uint agreementMinutes, uint agreementValue);
+    event TeamMemberAdded(uint indexed contractId);
     event TeamBalanceRefilled(uint indexed teamId, address payer, uint amount);
-    event TeamMemberRemoved(uint indexed teamId, address memberAccount);
-    event Payout(uint indexed teamId, address memberAccount, uint amount, address triggeredBy);
-    event ContractCompleted(uint indexed teamId, address memberAccount, bool extended); // Boolean extended: whether the contract was extended to a new period
-    event ContractProlongationFailed(uint indexed teamId, address memberAccount);
+    event TeamMemberRemoved(uint indexed contractId, uint amountPaidToMember, uint amountReturnedToTeam);
+    event Payout(uint indexed contractId, uint amount, address triggeredBy);
+    event ContractCompleted(uint indexed contractId, bool extended); // Boolean extended: whether the contract was extended to a new period
+    event ContractProlongationFailed(uint indexed contractId);
 
-    address public db; // TeamsStorage contract instance
     address public erc20TokenAddress; // Address of authorized token
     address public dreamTeamAddress; // Authorized account for managing teams
 
@@ -29,24 +28,8 @@ contract TeamContracts is TeamsStorageController {
         db = dbAddress;
     }
 
-    function getNumberOfTeams () public view returns(uint) {
-        return storageGetNumberOfTeams(db);
-    }
-
-    function getTeam (uint teamId) public view returns(
-        address[] memberAccounts,
-        uint[] payoutDate,
-        uint[] agreementMinutes,
-        uint[] agreementValue,
-        bool[] singleTermAgreement,
-        uint teamBalance,
-        address teamOwner
-    ) {
-        return storageGetTeam(db, teamId);
-    }
-
     function createTeam (address teamOwnerAccount) dreamTeamOnly public returns(uint) {
-        uint teamId = storageAddTeam(db, teamOwnerAccount);
+        uint teamId = storageAddTeam(teamOwnerAccount);
         TeamCreated(teamId);
         return teamId;
     }
@@ -57,40 +40,43 @@ contract TeamContracts is TeamsStorageController {
      * @param memberAccount - Member address (where token balance live in token contract)
      * @param agreementMinutes - Number of minutes to 
      */
-    function addMember (uint teamId, address memberAccount, uint agreementMinutes, uint agreementValue, bool singleTermAgreement) dreamTeamOnly public {
-        storageDecTeamBalance(db, teamId, agreementValue); // throws if balance goes negative
-        storageAddTeamMember(db, teamId, memberAccount, agreementMinutes, agreementValue, singleTermAgreement);
-        TeamMemberAdded(teamId, memberAccount, agreementMinutes, agreementValue);
+    function addMember (uint teamId, address memberAccount, uint agreementMinutes, uint agreementValue, bool singleTermAgreement, uint contractId) dreamTeamOnly public {
+        storageDecTeamBalance(teamId, agreementValue); // throws if balance goes negative
+        storageAddTeamMember(teamId, memberAccount, agreementMinutes, agreementValue, singleTermAgreement, contractId);
+        TeamMemberAdded(contractId);
     }
 
-    function removeMember (uint teamId, address memberAccount) dreamTeamOnly public {
+    function removeMember (uint teamId, uint contractId) dreamTeamOnly public {
 
-        uint memberIndex = storageGetTeamMemberIndexByAddress(db, teamId, memberAccount);
-        uint payoutDate = storageGetTeamMemberPayoutDate(db, teamId, memberIndex);
+        int memberIndex = storageGetTeamMemberIndexByContractId(teamId, contractId);
+        require(memberIndex != -1);
+
+        uint payoutDate = storageGetTeamMemberPayoutDate(teamId, uint(memberIndex));
 
         if (payoutDate <= now) { // return full amount to the player
-            ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(db, teamId, memberIndex), agreementValue);
+            ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, uint(memberIndex)), agreementValue);
+            TeamMemberRemoved(contractId, agreementValue, 0);
         } else { // if (payoutDate > now): return a part of the amount based on the number of days spent in the team, in proportion
-            uint agreementMinutes = storageGetTeamMemberAgreementMinutes(db, teamId, memberIndex);
-            uint agreementValue = storageGetTeamMemberAgreementValue(db, teamId, memberIndex);
+            uint agreementMinutes = storageGetTeamMemberAgreementMinutes(teamId, uint(memberIndex));
+            uint agreementValue = storageGetTeamMemberAgreementValue(teamId, uint(memberIndex));
             // amountToPayout = numberOfFullDaysSpentInTheTeam * dailyRate; dailyRate = totalValue / numberOfDaysInAgreement
             uint amountToPayout = ((agreementMinutes * 60 - (payoutDate - now)) / 1 days) * (60 * 24 * agreementValue / agreementMinutes);
             if (amountToPayout > 0)
-                ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(db, teamId, memberIndex), amountToPayout);
+                ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, uint(memberIndex)), amountToPayout);
             if (amountToPayout < agreementValue)
-                storageIncTeamBalance(db, teamId, agreementValue - amountToPayout); // unlock the rest of the funds
+                storageIncTeamBalance(teamId, agreementValue - amountToPayout); // unlock the rest of the funds
+            TeamMemberRemoved(contractId, amountToPayout, agreementValue - amountToPayout);
         }
 
         // Actually delete team member from a storage
-        storageDeleteTeamMember(db, teamId, memberIndex);
-        TeamMemberRemoved(teamId, memberAccount);
+        storageDeleteTeamMember(teamId, uint(memberIndex));
 
     }
 
     function payout (uint teamId) public {
 
         uint value;
-        address account;
+        uint contractId;
 
         // Iterate over all team members and payout to those who need to be paid.
         // This is intended to restrict DreamTeam or anyone else from triggering payout (and thus the contract extension) for 
@@ -100,30 +86,29 @@ contract TeamContracts is TeamsStorageController {
         // as we are going to trigger the payout daily and such case is more an exceptional one rather than the dangerous.
         // Even if team owner/member knows how to cheat over payout, the only thing they can do is to fail contract extension
         // for a particular team member (N rightmost team members) due to the lack of funds on the team balance.
-        for (uint index = 0; index < storageGetNumberOfMembers(db, teamId); ++index) {
-            if (storageGetTeamMemberPayoutDate(db, teamId, index) > now)
+        for (uint index = 0; index < storageGetNumberOfMembers(teamId); ++index) {
+            if (storageGetTeamMemberPayoutDate(teamId, index) > now)
                 continue;
-            value = storageGetTeamMemberAgreementValue(db, teamId, index);
-            account = storageGetTeamMemberAddress(db, teamId, index);
-            ERC20TokenInterface(erc20TokenAddress).transfer(account, value);
-            Payout(teamId, account, value, msg.sender);
-            if (storageGetTeamMemberSingleTermAgreement(db, teamId, index)) { // Terminate the contract due to a single-term agreement
-                storageDeleteTeamMember(db, teamId, index);
-                ContractCompleted(teamId, account, false);
+            value = storageGetTeamMemberAgreementValue(teamId, index);
+            contractId = storageGetMemberContractId(teamId, index);
+            ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, index), value);
+            Payout(contractId, value, msg.sender);
+            if (storageGetTeamMemberSingleTermAgreement(teamId, index)) { // Terminate the contract due to a single-term agreement
+                storageDeleteTeamMember(teamId, index);
+                ContractCompleted(contractId, false);
             } else { // Extend the contract
-                if (storageGetTeamBalance(db, teamId) < value) { // No funds in the team: auto extend is not possible, remove the team member
-                    storageDeleteTeamMember(db, teamId, index);
-                    ContractCompleted(teamId, account, false);
-                    ContractProlongationFailed(teamId, account);
+                if (storageGetTeamBalance(teamId) < value) { // No funds in the team: auto extend is not possible, remove the team member
+                    storageDeleteTeamMember(teamId, index);
+                    ContractCompleted(contractId, false);
+                    ContractProlongationFailed(contractId);
                 } else {
-                    storageDecTeamBalance(db, teamId, value);
+                    storageDecTeamBalance(teamId, value);
                     storageSetTeamMemberPayoutDate(
-                        db, 
                         teamId, 
                         index, 
-                        storageGetTeamMemberPayoutDate(db, teamId, index) + storageGetTeamMemberAgreementMinutes(db, teamId, index) * 60
+                        storageGetTeamMemberPayoutDate(teamId, index) + storageGetTeamMemberAgreementMinutes(teamId, index) * 60
                     );
-                    ContractCompleted(teamId, account, true);
+                    ContractCompleted(contractId, true);
                 }
             }
         }
@@ -140,12 +125,12 @@ contract TeamContracts is TeamsStorageController {
      * Refill team balance for a given amount.
      */
     function transferToTeam (uint teamId, uint amount) public {
-        // require(teamId < getNumberOfTeams(db)); // Does not open vulnerabilities but charities :)
+        // require(teamId < getNumberOfTeams()); // Does not open vulnerabilities but charities :)
         // require(amount > 0); // already tested in ERC20 token + has no sense
         require( // before calling transferToTeam, set allowance msg.sender->contractAddress in ERC20 token. 
             ERC20TokenInterface(erc20TokenAddress).transferFrom(msg.sender, address(this), amount)
         );
-        storageIncTeamBalance(db, teamId, amount);
+        storageIncTeamBalance(teamId, amount);
         TeamBalanceRefilled(teamId, msg.sender, amount);
     }
 

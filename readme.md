@@ -22,7 +22,7 @@ which need to be paid out, for a little fee in tokens. If DreamTeam for some unk
 trigger payouts, team members theirselves can trigger one, by using any services publicly available like 
 Etherscan or so.
 
-## Contracts for review:
+## Contracts for Review:
 
 Logic (entry point)
 
