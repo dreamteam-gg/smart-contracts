@@ -1,66 +1,37 @@
 # DreamTeam Smart Contracts
 
-**Notes for Contract Reviewers**
+This repository contains the code of the smart contracts used within [DreamTeam](https://dreamteam.gg) services. This repository is provided for informational purposes only.
 
-Hello! Thanks for taking a moment to review our code.
+Currently all smart contracts in this repository [are used](https://ropsten.etherscan.io/token/0x671c81d8731f9582f17e7519f46243040e7d9642) for test purposes in Ethereum test network (Ropsten). Smart contracts in the live network (mainnet) can be slightly different and some of them may be replaced.
 
-We're developing a smart contract(s) which will manage contracts (agreements) between teams (team owners)
-and players (team members), with adding more and more functionality to team owners/members in the future.
+## Description
 
-The whole dApp keeps track only of those parts of DreamTeam which are somehow related to crypto assets.
-This includes team creation (team owner assignment), adding or removing team members and paying to them.
+This repository contains smart contracts code which manage contracts (agreements) between teams (team owners)
+and players (team members). Some of these smart contracts are meant to be upgradable, preserving opportunity for DreamTeam to add more and more functionality in the future.
 
-We will have an authorized address (DreamTeam address) to manage teams (create new teams, add/remove
-team members with appropriate rules). The crucial thing is guaranteed payouts to team members. Once
-a team contract (meaning the contract between the team owner and a player) is established (when
-DreamTeam account will actually trigger an `addMember` function of a smart contract), the player is
-**guaranteed** to receive their tokens due to a publicly available function `payout` in TeamContracts
-smart contract.
+The whole dApp (smart contracts) keeps track only of those parts of DreamTeam which are somehow related to crypto assets.
+This includes team creation (team owner assignment), adding or removing team members and paying to them, token transfers and so on.
 
-Normally, in the future, DreamTeam is going to trigger payouts once a day, massively for all the teams
+We have an authorized address (DreamTeam address) to manage teams (create new teams, add/remove
+team members with appropriate rules). The crucial thing is that all payouts to team members are guaranteed
+once an agreement is established. Once a team contract (meaning the contract between the team owner and a 
+player) is established (technically speaking, when DreamTeam account will actually trigger an `addMember`
+function of a smart contract), the player is **guaranteed** to receive their tokens due to a publicly
+available function `payout` in TeamContracts smart contract.
+
+Normally, in the future, DreamTeam is going to trigger payouts once a day, massively, for all teams
 which need to be paid out, for a little fee in tokens. If DreamTeam for some unknown reason does not
-trigger payouts, team members theirselves can trigger one, by using any services publicly available like 
-Etherscan or so.
+trigger payouts, team members theirselves can trigger ones, by using any services publicly available like 
+Etherscan, MyEtherWallet or so.
 
-## Contracts for Review:
+## Smart Contracts
 
-Logic (entry point)
+Currently, we expose two smart contracts for a public use:
 
-+ contracts\teams\TeamContracts.sol (upgradeable/replaceable smart contract which communicates with storage)
++ [contracts/teams/TeamContracts.sol](contracts/teams/TeamContracts.sol) (an upgradeable/replaceable smart contract)
++ [contracts/token/TDTT.sol](contracts/token/TDTT.sol) (ERC20 test token: a simple token deployed for testing purposes only)
 
-Storage (eternal ownable storage)
+## Smart Contract Addresses (Test Network)
 
-+ contracts\storage\BasicStorage.sol (basic functions for DreamTeamStorage.sol)
-+ contracts\storage\DreamTeamStorage.sol (deployable contract)
-+ contracts\storage\StorageInterface.sol (interface used in TeamsStorageController.sol)
-+ contracts\storage\TeamsStorageController.sol (storage utilities)
-
-Notes/questions:
-
-+ Check test\teams\TeamContracts.js for complete flows of smart contracts deployment, interaction with
-  them and other useful stuff to understand how this works.
-+ To avoid losing permission to storage in case of deployment mistake, we'll grant access to the storage
-  to our own account (in addition to TeamContracts smart contract address) and will securely store the key
-  from this account.
-+ We'll always deploy new contracts ensuring that they call selfdestruct() after upgrading, and ols smart
-  contracts lose their permissions to write to the storage.
-+ What would be your recommendation in case of more and more functionality added to the contracts? For 
-  now, all tokens are stored on the TeamContracts smart contract address and are transferred to a new
-  TeamContracts in case of contract upgrading, which does not break the consistency. But, deployment of
-  TeamContracts is close the block gas limit, and we'll need to split its functionality at some point of
-  time to many smart contracts. The question is, which smart contract should hold the tokens? Options:
-  + Leave tokens on the account of TeamContracts smart contract, and additionally implement functions to
-    make transfers for authorized smart contracts, which will be deployed in the future;
-  + Hold tokens on the DreamTeamStorage smart contract account and additionally implement functions for 
-    storage owners to make transfers. This strategy seems to have a caveat that storage is deployed once
-    and transfers logic will be hard-coded and will not be replaceable.
-  + In future, make a dedicated smart contract which will manage tokens on its address and allow token
-    transfers only from authorized smart contracts.
-+ We'll keep track of the most actual smart contract address(es) to interact with off-chain on our servers,
-  which does not influence neither user experience nor ability to upgrade smart contracts. We'll always
-  provide the most recent deployed contract address to users in case they want to trigger payments 
-  theirselves. We'll implement a registry to keep track of actual smart contract addresses in the future
-  if there will be a need to do so.
-
-For any further questions contact me, the developer of smart contracts directly, at 
-[nikita.tk](https://nikita.tk) or n.savchenko@dreamteam.gg.
++ TeamContracts: [0xfa48ab1c05ab1e7727e15ab879c88faa8a7357ef](https://ropsten.etherscan.io/address/0xfa48ab1c05ab1e7727e15ab879c88faa8a7357ef)
++ DreamTeam Test Token (TDTT): [0x671c81d8731f9582f17e7519f46243040e7d9642](https://ropsten.etherscan.io/token/0x671c81d8731f9582f17e7519f46243040e7d9642)
