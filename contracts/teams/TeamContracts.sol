@@ -1,4 +1,4 @@
-pragma solidity ^0.4.18;
+pragma solidity ^0.4.21;
 
 import "../storage/TeamsStorageController.sol";
 import "../storage/StorageInterface.sol";
@@ -13,6 +13,7 @@ contract TeamContracts is TeamsStorageController {
     event Payout(uint indexed contractId, uint amount, address triggeredBy);
     event ContractCompleted(uint indexed contractId, bool extended); // Boolean extended: whether the contract was extended to a new period
     event ContractProlongationFailed(uint indexed contractId);
+    event Upgraded(address newContract);
 
     address public erc20TokenAddress; // Address of authorized token
     address public dreamTeamAddress; // Authorized account for managing teams
@@ -30,7 +31,7 @@ contract TeamContracts is TeamsStorageController {
 
     function createTeam (address teamOwnerAccount) dreamTeamOnly public returns(uint) {
         uint teamId = storageAddTeam(teamOwnerAccount);
-        TeamCreated(teamId);
+        emit TeamCreated(teamId);
         return teamId;
     }
 
@@ -43,7 +44,7 @@ contract TeamContracts is TeamsStorageController {
     function addMember (uint teamId, address memberAccount, uint agreementMinutes, uint agreementValue, bool singleTermAgreement, uint contractId) dreamTeamOnly public {
         storageDecTeamBalance(teamId, agreementValue); // throws if balance goes negative
         storageAddTeamMember(teamId, memberAccount, agreementMinutes, agreementValue, singleTermAgreement, contractId);
-        TeamMemberAdded(contractId);
+        emit TeamMemberAdded(contractId);
     }
 
     function removeMember (uint teamId, uint contractId) dreamTeamOnly public {
@@ -55,7 +56,7 @@ contract TeamContracts is TeamsStorageController {
 
         if (payoutDate <= now) { // return full amount to the player
             ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, uint(memberIndex)), agreementValue);
-            TeamMemberRemoved(contractId, agreementValue, 0);
+            emit TeamMemberRemoved(contractId, agreementValue, 0);
         } else { // if (payoutDate > now): return a part of the amount based on the number of days spent in the team, in proportion
             uint agreementMinutes = storageGetTeamMemberAgreementMinutes(teamId, uint(memberIndex));
             uint agreementValue = storageGetTeamMemberAgreementValue(teamId, uint(memberIndex));
@@ -65,7 +66,7 @@ contract TeamContracts is TeamsStorageController {
                 ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, uint(memberIndex)), amountToPayout);
             if (amountToPayout < agreementValue)
                 storageIncTeamBalance(teamId, agreementValue - amountToPayout); // unlock the rest of the funds
-            TeamMemberRemoved(contractId, amountToPayout, agreementValue - amountToPayout);
+            emit TeamMemberRemoved(contractId, amountToPayout, agreementValue - amountToPayout);
         }
 
         // Actually delete team member from a storage
@@ -92,23 +93,23 @@ contract TeamContracts is TeamsStorageController {
             value = storageGetTeamMemberAgreementValue(teamId, index);
             contractId = storageGetMemberContractId(teamId, index);
             ERC20TokenInterface(erc20TokenAddress).transfer(storageGetTeamMemberAddress(teamId, index), value);
-            Payout(contractId, value, msg.sender);
+            emit Payout(contractId, value, msg.sender);
             if (storageGetTeamMemberSingleTermAgreement(teamId, index)) { // Terminate the contract due to a single-term agreement
                 storageDeleteTeamMember(teamId, index);
-                ContractCompleted(contractId, false);
+                emit ContractCompleted(contractId, false);
             } else { // Extend the contract
                 if (storageGetTeamBalance(teamId) < value) { // No funds in the team: auto extend is not possible, remove the team member
                     storageDeleteTeamMember(teamId, index);
-                    ContractCompleted(contractId, false);
-                    ContractProlongationFailed(contractId);
+                    emit ContractCompleted(contractId, false);
+                    emit ContractProlongationFailed(contractId);
                 } else {
                     storageDecTeamBalance(teamId, value);
                     storageSetTeamMemberPayoutDate(
-                        teamId, 
-                        index, 
+                        teamId,
+                        index,
                         storageGetTeamMemberPayoutDate(teamId, index) + storageGetTeamMemberAgreementMinutes(teamId, index) * 60
                     );
-                    ContractCompleted(contractId, true);
+                    emit ContractCompleted(contractId, true);
                 }
             }
         }
@@ -131,7 +132,7 @@ contract TeamContracts is TeamsStorageController {
             ERC20TokenInterface(erc20TokenAddress).transferFrom(msg.sender, address(this), amount)
         );
         storageIncTeamBalance(teamId, amount);
-        TeamBalanceRefilled(teamId, msg.sender, amount);
+        emit TeamBalanceRefilled(teamId, msg.sender, amount);
     }
 
     /**
@@ -139,11 +140,16 @@ contract TeamContracts is TeamsStorageController {
      * @param newDeployedTeamContracts - Deployed teams contract.
      */
     function upgrade (address newDeployedTeamContracts) dreamTeamOnly public {
-        require(TeamContracts(newDeployedTeamContracts).db() == db); // Check whether the switch is performed between contracts linked to the same database
-        require(TeamContracts(newDeployedTeamContracts).erc20TokenAddress() == erc20TokenAddress); // Check whether they share the same token as well
-        // However, the owner of the contract can be different in the new contract, no restrictions apply here
+        require(TeamContracts(newDeployedTeamContracts).db() == db); // Switch between contracts linked to the same storage
+        // Do not enforce the same token contract for new TeamContracts; this took place when a token is upgraded (changed)
+        // In case of the new token contract, a special care should be taken into account to preserve the same balance in
+        // tokens in the newly deployed token contract.
+        // - require(TeamContracts(newDeployedTeamContracts).erc20TokenAddress() == erc20TokenAddress);
         StorageInterface(db).transferOwnership(newDeployedTeamContracts); // Revoke access from the current contract and grant access to a new one
-        ERC20TokenInterface(erc20TokenAddress).transfer(newDeployedTeamContracts, ERC20TokenInterface(erc20TokenAddress).balanceOf(this)); // Move all funds to a new contract
+        ERC20TokenInterface(erc20TokenAddress).transfer( // Move all funds to a new contract
+            newDeployedTeamContracts, ERC20TokenInterface(erc20TokenAddress).balanceOf(this)
+        );
+        emit Upgraded(newDeployedTeamContracts);
         selfdestruct(newDeployedTeamContracts);
     }
 
