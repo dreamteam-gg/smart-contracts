@@ -1,4 +1,4 @@
-pragma solidity ^0.4.21;
+pragma solidity ^0.4.23;
 
 interface tokenRecipient {
     function receiveApproval (address from, uint256 value, address token, bytes extraData) external;
@@ -10,7 +10,7 @@ interface tokenRecipient {
  * 2. Additional utility function approveAndCall. [OK]
  * 3. Function to rescue "lost forever" tokens, which were accidentally sent to the contract address. [OK]
  * 4. Additional transfer and approve functions which allow to distinct the transaction signer and executor,
- *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [TEST]
+ *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [ALPHA]
  * 5. Token sale distribution rules. [OK]
  */
 contract DTT {
@@ -28,7 +28,7 @@ contract DTT {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    bytes public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n32";
+    bytes public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n";
     enum sigStandard { typed, personal, stringHex }
     enum sigDestination { transfer, approve, approveAndCall }
     bytes32 public sigDestinationTransfer = keccak256(
@@ -38,9 +38,8 @@ contract DTT {
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
-        "uint256 Signature ID",
-        "uint8 Signature Standard"
-    ); // `transferViaSignature`: keccak256(address(this), from, to, value, fee, deadline, sigId, sigStandard)
+        "uint256 Signature ID"
+    ); // `transferViaSignature`: keccak256(address(this), from, to, value, fee, deadline, sigId)
     bytes32 public sigDestinationApprove = keccak256(
         "address Token Contract Address",
         "address Withdraw Approval Address",
@@ -48,9 +47,8 @@ contract DTT {
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
-        "uint256 Signature ID",
-        "uint8 Signature Standard"
-    ); // `approveViaSignature`: keccak256(address(this), from, spender, value, fee, deadline, sigId, sigStandard)
+        "uint256 Signature ID"
+    ); // `approveViaSignature`: keccak256(address(this), from, spender, value, fee, deadline, sigId)
     bytes32 public sigDestinationApproveAndCall = keccak256( // `approveAndCallViaSignature`
         "address Token Contract Address",
         "address Withdraw Approval Address",
@@ -59,11 +57,10 @@ contract DTT {
         "bytes Data to Transfer",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
-        "uint256 Signature ID",
-        "uint8 Signature Standard"
-    ); // `approveAndCallViaSignature`: keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId, sigStandard)
+        "uint256 Signature ID"
+    ); // `approveAndCallViaSignature`: keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId)
 
-    function DTT (string tokenName, string tokenSymbol) public { // todo: remove initial supply
+    constructor (string tokenName, string tokenSymbol) public {
         name = tokenName;
         symbol = tokenSymbol;
         rescueAccount = tokenDistributor = msg.sender;
@@ -141,20 +138,20 @@ contract DTT {
                 )
             );
         } else if (std == sigStandard.personal) { // Ethereum signed message signature
-            require(from == ecrecover(keccak256(ethSignedMessagePrefix, data), v, r, s));
+            require(from == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s));
         } else { // == 2; Signed string hash signature (the most expensive but universal)
-            require(from == ecrecover(keccak256(ethSignedMessagePrefix, hexToString(data)), v, r, s));
+            require(from == ecrecover(keccak256(ethSignedMessagePrefix, "64", hexToString(data)), v, r, s));
         }
         usedSigIds[from][sigId] = true;
     }
 
-    function hexToString (bytes32 sig) internal pure returns (string) { // TODO: convert to two uint256 and test gas
+    function hexToString (bytes32 sig) internal pure returns (bytes) { // /to-try/ convert to two uint256 and test gas
         bytes memory str = new bytes(64);
         for (uint8 i = 0; i < 32; ++i) {
             str[2 * i] = byte((uint8(sig[i]) / 16 < 10 ? 48 : 87) + uint8(sig[i]) / 16);
             str[2 * i + 1] = byte((uint8(sig[i]) % 16 < 10 ? 48 : 87) + (uint8(sig[i]) % 16));
         }
-        return string(str);
+        return str;
     }
 
     /**

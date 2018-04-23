@@ -1,10 +1,12 @@
 const DTT = artifacts.require("DTT");
 const Web3 = require("web3"); // Latest web3 version
 web3m = new Web3(web3.currentProvider);
+const sigUtils = require("eth-sig-util");
+const Buffer = require("safe-buffer").Buffer;
 
 /**
  * Generate random token sale distribution table.
- * @param {number} tokenDecimals 
+ * @param {number} tokenDecimals
  */
 function getTokenSaleDistributionTable (tokenDecimals = 18) {
     const approximateTokens = 40000000 /* USD */ / 300 /* ETH/USD */ * 1800 /* Tokens per 1 ETH */; // +- 100%
@@ -59,7 +61,7 @@ const forwardTime = async function (minutesToForward) { return new Promise((reso
 }) }
 
 const gasPrice = 2 * Math.pow(10, 9); // 2 GWei
-const ethToUsdRate = 400;
+const ethToUsdRate = 700;
 const blockGasLimit = 4600000 - 600000; // Give 600000 spare gas per block
 const expectedTotalSupply = 250000000;
 const getUsedGas = (tx) => `${ tx.receipt.gasUsed } gas (~$${ 
@@ -300,7 +302,7 @@ contract("DTT", (accounts) => {
 
     describe("Token approve and transferFrom", () => {
 
-        it("Token transfer case 1", async function () {
+        it("Token transfer case 1, single transfer", async function () {
 
             const value = 10 * 10 ** decimals;
             const from = dreamTeamAccount;
@@ -343,7 +345,7 @@ contract("DTT", (accounts) => {
 
         });
 
-        it("Token transfer case 2", async function () {
+        it("Token transfer case 2, multiple transfers", async function () {
 
             const value = 10 * 10 ** decimals;
             const from = dreamTeamAccount;
@@ -385,7 +387,7 @@ contract("DTT", (accounts) => {
 
         let value, from, to, delegate, fee, deadline, signature, usedSigId;
 
-        it("Allows pre-signed transfer", async function () {
+        it("Allows pre-signed transfer using personal sign standard", async function () {
 
             value = 10 * 10 ** decimals;
             from = account1;
@@ -408,12 +410,119 @@ contract("DTT", (accounts) => {
 
         });
 
-        it("Does not allow to re-use signatures", async function () {
+        it("Does not allow to re-use signature", async function () {
 
             try {
-                await token.transferViaSignature(from, to, value, fee, deadline, usedSigId, signature, {
-                    from: delegate
-                });
+                await token.transferViaSignature(
+                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                );
+            } catch (e) {
+                return assert.ok(true);
+            }
+            assert.fail(`Allows signature to be re-used (replay attack)`);
+
+        });
+
+        it("Allows pre-signed transfer using personal hex string sign standard", async function () {
+
+            value = 4 * 10 ** decimals;
+            from = account1;
+            to = strangerAccount;
+            delegate = dreamTeamAccount;
+            fee = 2 * 10 ** decimals - 1;
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign.slice(2), account1);
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
+        it("Does not allow to re-use signature", async function () {
+
+            try {
+                await token.transferViaSignature(
+                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
+                );
+            } catch (e) {
+                return assert.ok(true);
+            }
+            assert.fail(`Allows signature to be re-used (replay attack)`);
+
+        });
+
+        it("Allows pre-signed transfer using sign typed data standard", async function () {
+
+            const newAccount = web3m.eth.accounts.create();
+            value = 4 * 10 ** decimals;
+            from = newAccount.address;
+            to = strangerAccount;
+            delegate = dreamTeamAccount;
+            fee = 2 * 10 ** decimals - 1;
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            usedSigId = sigId++;
+            const dataToSign = [{
+                type: 'address',
+                name: 'Token Contract Address',
+                value: token.address
+            }, {   
+                type: 'address',
+                name: 'Sender\'s Address',
+                value: from
+            }, {   
+                type: 'address',
+                name: 'Recipient\'s Address',
+                value: to
+            }, {   
+                type: 'uint256',
+                name: 'Amount to Transfer (last six digits are decimals)',
+                value: value
+            }, {   
+                type: 'uint256',
+                name: 'Fee in Tokens Paid to Executor (last six digits are decimals)',
+                value: fee
+            }, {   
+                type: 'uint256',
+                name: 'Signature Expiration Timestamp (unix timestamp)',
+                value: deadline
+            }, {   
+                type: 'uint256',
+                name: 'Signature ID',
+                value: usedSigId
+            }];
+            await token.transfer(from, value + fee, { from: dreamTeamAccount });
+            const balanceFrom = +(await token.balanceOf.call(from));
+            assert.equal(balanceFrom, value + fee, "Account balance must be refilled");
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = sigUtils.signTypedData(
+                Buffer.from(newAccount.privateKey.slice(2), 'hex'),
+                { data: dataToSign }
+            );
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
+        it("Does not allow to re-use signature", async function () {
+
+            try {
+                await token.transferViaSignature(
+                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
+                );
             } catch (e) {
                 return assert.ok(true);
             }

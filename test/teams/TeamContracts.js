@@ -81,10 +81,6 @@ contract("TeamContracts", (accounts) => {
             member: []
         }];
 
-    console.log(
-        `Estimations used for this test: ETH/USD=${ ethToUsdRate }, gasPrice=${ gasPrice / Math.pow(10, 9) } GWei`
-    );
-
     /**
      * Returns team information in human-friendly format. You can re-use this function whereever you like.
      * @param {number} teamId 
@@ -160,9 +156,13 @@ contract("TeamContracts", (accounts) => {
     }}
 
     before(async function () {
+        console.log(
+            `Estimations used for this test: ETH/USD=${ ethToUsdRate }, gasPrice=${ gasPrice / Math.pow(10, 9) } GWei`
+        );
         storage = await Storage.deployed();
         token = await Token.deployed();
         teamContracts = await TeamContracts.deployed();
+        console.log(`Deployed team contracts: ${ teamContracts.address }`);
     });
 
     describe("Token checkup", () => {
@@ -271,13 +271,15 @@ contract("TeamContracts", (accounts) => {
                 });
             }
 
-            try { // Phase 1: allow smart contract to withdrawal teamInitialTokenReward tokens from DreamTeam account
-                const tx = await token.approve(teamContracts.address, amount, {
-                    from: fromAccount
-                });
-                console.log(`      ⓘ token.approve: ${ getUsedGas(tx) }`);
-            } catch (e) {
-                assert.fail("Cannot approve in ERC20 token; " + e);
+            if (fromAccount !== accounts[DreamTeam]) { // PRE-APPROVAL must be performed for DreamTeam account 
+                try { // Phase 1: allow smart contract to withdrawal teamInitialTokenReward tokens from DreamTeam account
+                    const tx = await token.approve(teamContracts.address, amount, {
+                        from: fromAccount
+                    });
+                    console.log(`      ⓘ token.approve: ${ getUsedGas(tx) }`);
+                } catch (e) {
+                    assert.fail("Cannot approve in ERC20 token; " + e);
+                }
             }
 
             try { // Phase 2: tell the team ID and amount to transfer to that team

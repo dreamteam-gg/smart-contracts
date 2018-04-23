@@ -1,4 +1,4 @@
-pragma solidity ^0.4.21;
+pragma solidity ^0.4.23;
 
 import "../storage/TeamsStorageController.sol";
 import "../storage/StorageInterface.sol";
@@ -23,7 +23,7 @@ contract TeamContracts is TeamsStorageController {
     /**
      * Constructor. This is yet the only way to set owner address, token address and storage address.
      */
-    function TeamContracts (address dt, address token, address dbAddress) public {
+    constructor (address dt, address token, address dbAddress) public {
         dreamTeamAddress = dt;
         erc20TokenAddress = token;
         db = dbAddress;
