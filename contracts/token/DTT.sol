@@ -42,9 +42,9 @@ contract DTT {
     ); // `transferViaSignature`: keccak256(address(this), from, to, value, fee, deadline, sigId)
     bytes32 public sigDestinationTransferFrom = keccak256(
         "address Token Contract Address",
-        "address Address Authorized for Withdrawal",
-        "address Sender's Address",
-        "address Recipient's Address",
+        "address Address Approved for Withdraw",
+        "address Account to Withdraw From",
+        "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
@@ -52,8 +52,8 @@ contract DTT {
     ); // `transferViaSignature`: keccak256(address(this), signer, from, to, value, fee, deadline, sigId)
     bytes32 public sigDestinationApprove = keccak256(
         "address Token Contract Address",
-        "address Withdraw Approval Address",
-        "address Withdraw Recipient Address",
+        "address Withdrawal Approval Address",
+        "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
@@ -61,8 +61,8 @@ contract DTT {
     ); // `approveViaSignature`: keccak256(address(this), from, spender, value, fee, deadline, sigId)
     bytes32 public sigDestinationApproveAndCall = keccak256( // `approveAndCallViaSignature`
         "address Token Contract Address",
-        "address Withdraw Approval Address",
-        "address Withdraw Recipient Address",
+        "address Withdrawal Approval Address",
+        "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "bytes Data to Transfer",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
@@ -107,17 +107,13 @@ contract DTT {
     }
 
     /**
-     * Transfer `value` tokens to `to` address from the account of sender.
-     * @param to - the address of the recipient
-     * @param value - the amount to send
-     */
-    function transfer (address to, uint256 value) public returns (bool) {
-        internalTransfer(msg.sender, to, value);
-        return true;
-    }
-
-    /**
      * Internal method that makes sure that the given signature corresponds to a given data and is made by `signer`.
+     * It utilizes three (four) standards of message signing in Ethereum, as at the moment of this smart contract
+     * development there is no single signing standard defined. For example, Metamask and Geth both support
+     * personal_sign standard, SignTypedData is only supported by Matamask, Trezor does not support "widely adopted"
+     * Ethereum personal_sign but rather personal_sign with fixed prefix and so on.
+     * Note that it is always possible to forge any of these signatures using the private key, the problem is that
+     * third-party wallets must adopt a single standard for signing messages.
      */
     function requireSignature (
         bytes32 data, address signer, uint256 deadline, uint256 sigId, bytes sig, sigStandard std, sigDestination signDest
@@ -133,7 +129,7 @@ contract DTT {
         if (v < 27)
             v += 27;
         require(block.timestamp <= deadline && !usedSigIds[signer][sigId]); // solium-disable-line security/no-block-members
-        if (std == sigStandard.typed) { // Typed signature
+        if (std == sigStandard.typed) { // Typed signature. This is the most likely scenario to be used and accepted
             require(
                 signer == ecrecover(
                     keccak256(
@@ -149,14 +145,26 @@ contract DTT {
                     v, r, s
                 )
             );
-        } else if (std == sigStandard.personal) { // Ethereum signed message signature
-            require(signer == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s));
+        } else if (std == sigStandard.personal) { // Ethereum signed message signature (Geth and Trezor)
+            require(
+                signer == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s) // Geth-adopted
+                ||
+                signer == ecrecover(keccak256(ethSignedMessagePrefix, "\x20", data), v, r, s) // Trezor-adopted
+            );
         } else { // == 2; Signed string hash signature (the most expensive but universal)
-            require(signer == ecrecover(keccak256(ethSignedMessagePrefix, "64", hexToString(data)), v, r, s));
+            require(
+                signer == ecrecover(keccak256(ethSignedMessagePrefix, "64", hexToString(data)), v, r, s) // Geth
+                ||
+                signer == ecrecover(keccak256(ethSignedMessagePrefix, "\x40", hexToString(data)), v, r, s) // Trezor
+            );
         }
         usedSigIds[signer][sigId] = true;
     }
 
+    /**
+     * Utility costly function to encode bytes HEX representation as string.
+     * @param sig - signature to encode.
+     */
     function hexToString (bytes32 sig) internal pure returns (bytes) { // /to-try/ convert to two uint256 and test gas
         bytes memory str = new bytes(64);
         for (uint8 i = 0; i < 32; ++i) {
@@ -164,6 +172,16 @@ contract DTT {
             str[2 * i + 1] = byte((uint8(sig[i]) % 16 < 10 ? 48 : 87) + (uint8(sig[i]) % 16));
         }
         return str;
+    }
+
+    /**
+     * Transfer `value` tokens to `to` address from the account of sender.
+     * @param to - the address of the recipient
+     * @param value - the amount to send
+     */
+    function transfer (address to, uint256 value) public returns (bool) {
+        internalTransfer(msg.sender, to, value);
+        return true;
     }
 
     /**
@@ -198,47 +216,6 @@ contract DTT {
             from, deadline, sigId, sig, sigStd, sigDestination.transfer
         );
         internalDoubleTransfer(from, to, value, msg.sender, fee);
-        return true;
-    }
-
-    /**
-     * Transfer `value` tokens to `to` address from the `from` account, using the previously set allowance.
-     * @param from - the address to transfer tokens from
-     * @param to - the address of the recipient
-     * @param value - the amount to send
-     */
-    function transferFrom (address from, address to, uint256 value) public returns (bool) {
-        require(value <= allowance[from][msg.sender]); // Test whether allowance was set
-        allowance[from][msg.sender] -= value;
-        internalTransfer(from, to, value);
-        return true;
-    }
-
-    /**
-     * Same as `transferViaSignature`, but for `transferFrom`.
-     * Use case: the user wants to withdraw tokens from a smart contract or user who allowed the user to do so.
-     * @param from - the address to transfer tokens from
-     * @param to - the address of the recipient
-     * @param value - the amount to send
-     */
-    function transferFromViaSignature (
-        address     signer,
-        address     from,
-        address     to,
-        uint256     value,
-        uint256     fee,
-        uint256     deadline,
-        uint256     sigId,
-        bytes       sig,
-        sigStandard sigStd
-    ) external returns (bool) {
-        requireSignature(
-            keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
-            signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
-        );
-        require(value <= allowance[from][signer]);
-        allowance[from][signer] -= value;
-        internalTransfer(from, to, value);
         return true;
     }
 
@@ -287,6 +264,48 @@ contract DTT {
         allowance[from][spender] = value;
         emit Approval(from, spender, value);
         internalTransfer(from, msg.sender, value);
+        return true;
+    }
+
+    /**
+     * Transfer `value` tokens to `to` address from the `from` account, using the previously set allowance.
+     * @param from - the address to transfer tokens from
+     * @param to - the address of the recipient
+     * @param value - the amount to send
+     */
+    function transferFrom (address from, address to, uint256 value) public returns (bool) {
+        require(value <= allowance[from][msg.sender]); // Test whether allowance was set
+        allowance[from][msg.sender] -= value;
+        internalTransfer(from, to, value);
+        return true;
+    }
+
+    /**
+     * Same as `transferViaSignature`, but for `transferFrom`.
+     * Use case: the user wants to withdraw tokens from a smart contract or another user who allowed the user to do so.
+     * Important note: fee is subtracted from `value` before it reaches `to`.
+     * @param from - the address to transfer tokens from
+     * @param to - the address of the recipient
+     * @param value - the amount to send
+     */
+    function transferFromViaSignature (
+        address     signer,
+        address     from,
+        address     to,
+        uint256     value,
+        uint256     fee,
+        uint256     deadline,
+        uint256     sigId,
+        bytes       sig,
+        sigStandard sigStd
+    ) external returns (bool) {
+        requireSignature(
+            keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
+            signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
+        );
+        require(value <= allowance[from][signer] && value >= fee);
+        allowance[from][signer] -= value;
+        internalDoubleTransfer(from, msg.sender, fee, to, value - fee);
         return true;
     }
 
@@ -386,16 +405,19 @@ contract DTT {
     }
 
     /**
-     * ERC20 token is not designed to hold any tokens itself. This fallback function allows to rescue tokens
-     * accidentally sent to the address of this smart contract.
+     * ERC20 token is not designed to hold any tokens itself. This function allows to rescue tokens accidentally sent
+     * to the address of this smart contract.
+     * @param tokenContract - ERC-20 compatible token
+     * @param value - amount to rescue
      */
-    function rescueTokens (DTT tokenContract, uint256 tokens) public {
+    function rescueTokens (DTT tokenContract, uint256 value) public {
         require(msg.sender == rescueAccount);
-        tokenContract.approve(rescueAccount, tokens);
+        tokenContract.approve(rescueAccount, value);
     }
 
     /**
      * Utility function that allows to change the rescueAccount address.
+     * @param newRescueAccount - account which will be authorized to rescue tokens.
      */
     function changeRescueAccount (address newRescueAccount) public {
         require(msg.sender == rescueAccount);
