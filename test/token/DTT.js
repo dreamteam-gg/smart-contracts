@@ -6,7 +6,7 @@ const Buffer = require("safe-buffer").Buffer;
 
 /**
  * Generate random token sale distribution table.
- * @param {number} tokenDecimals
+ * @param {number} tokenDecimals 
  */
 function getTokenSaleDistributionTable (tokenDecimals = 18) {
     const approximateTokens = 40000000 /* USD */ / 300 /* ETH/USD */ * 1800 /* Tokens per 1 ETH */; // +- 100%
@@ -74,6 +74,7 @@ contract("DTT", (accounts) => {
     const SIG_STANDARD_TYPED = 0;
     const SIG_STANDARD_PERSONAL = 1;
     const SIG_STANDARD_HEX_STRING = 2;
+    const someAccount = accounts[0];
     const dreamTeamAccount = accounts[1];
     const account1 = accounts[2];
     const strangerAccount = accounts[9];
@@ -387,19 +388,36 @@ contract("DTT", (accounts) => {
 
         let value, from, to, delegate, fee, deadline, signature, usedSigId;
 
-        it("Allows pre-signed transfer using personal sign standard", async function () {
+        it("Does not accept signature with expired deadline", async function () {
 
             value = 10 * 10 ** decimals;
             from = account1;
             to = strangerAccount;
             delegate = dreamTeamAccount;
             fee = 1 * 10 ** decimals;
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp - 60 * 60; // 1 hour ago
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            signature = await web3m.eth.sign(dataToSign, from);
+            try {
+                await token.transferViaSignature(
+                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                );
+            } catch (e) {
+                return assert.ok(true);
+            }
+            assert.fail("Must catch exception");
+
+        });
+
+        it("Allows pre-signed transfer using personal sign standard", async function () {
+
+            // Takes data from previous test
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
-            signature = await web3m.eth.sign(dataToSign, account1);
+            signature = await web3m.eth.sign(dataToSign, from);
             const tx = await token.transferViaSignature(
                 from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
             );
@@ -435,7 +453,7 @@ contract("DTT", (accounts) => {
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
-            signature = await web3m.eth.sign(dataToSign.slice(2), account1);
+            signature = await web3m.eth.sign(dataToSign.slice(2), from);
             const tx = await token.transferViaSignature(
                 from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
             );
@@ -527,6 +545,93 @@ contract("DTT", (accounts) => {
                 return assert.ok(true);
             }
             assert.fail(`Allows signature to be re-used (replay attack)`);
+
+        });
+
+    });
+
+    describe("Pre-signed token transferFrom", () => {
+
+        let value, signer, from, to, delegate, fee, deadline, signature, usedSigId;
+
+        it("Allows pre-signed transferFrom to allowed account", async function () {
+
+            let caught = null;
+            value = 10 * 10 ** decimals;
+            signer = strangerAccount;
+            from = dreamTeamAccount;
+            to = signer;
+            delegate = account1;
+            fee = 1 * 10 ** decimals;
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const dataToSign = web3m.utils.soliditySha3(
+                token.address, signer, from, to, value, fee, deadline, usedSigId = sigId++
+            );
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign, signer);
+            await token.approve(signer, 0, { from });
+            try {
+                await token.transferFromViaSignature(
+                    signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                );
+            } catch (e) {
+                caught = e;
+            } finally {
+                assert.notEqual(caught, null, "Must catch exception as allowance is not set");
+            }
+            await token.approve(signer, value, { from });
+            const tx = await token.transferFromViaSignature(
+                signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+            );
+            infoLog(`TX (transferFromViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value, "Must subtract balance from `from`");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value - fee, "Must add (value - fee) to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must handle payment to delegate");
+            // Signer balance is the same as to
+            assert.equal(+(await token.allowance(from, signer)), 0, "Allowance must be reset to 0");
+
+        });
+
+        it("Allows pre-signed transferFrom with allowed account's signature but to another address", async function () {
+
+            let caught = null;
+            value = 10 * 10 ** decimals;
+            signer = strangerAccount;
+            from = dreamTeamAccount;
+            to = someAccount;
+            delegate = account1;
+            fee = 1 * 10 ** decimals;
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const dataToSign = web3m.utils.soliditySha3(
+                token.address, signer, from, to, value, fee, deadline, usedSigId = sigId++
+            );
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceSigner = +(await token.balanceOf.call(signer));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign, signer);
+            await token.approve(signer, 0, { from });
+            try {
+                await token.transferFromViaSignature(
+                    signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                );
+            } catch (e) {
+                caught = e;
+            } finally {
+                assert.notEqual(caught, null, "Must catch exception as allowance is not set");
+            }
+            await token.approve(signer, value, { from });
+            const tx = await token.transferFromViaSignature(
+                signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+            );
+            infoLog(`TX (transferFromViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value, "Must subtract balance from `from`");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value - fee, "Must add (value - fee) to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must handle payment to delegate");
+            assert.equal(+(await token.balanceOf(signer)), balanceSigner, "Must not change the signer's balance");
+            assert.equal(+(await token.allowance(from, signer)), 0, "Allowance must be reset to 0");
 
         });
 

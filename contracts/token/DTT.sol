@@ -30,7 +30,7 @@ contract DTT {
 
     bytes public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n";
     enum sigStandard { typed, personal, stringHex }
-    enum sigDestination { transfer, approve, approveAndCall }
+    enum sigDestination { transfer, approve, approveAndCall, transferFrom }
     bytes32 public sigDestinationTransfer = keccak256(
         "address Token Contract Address",
         "address Sender's Address",
@@ -40,6 +40,16 @@ contract DTT {
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
     ); // `transferViaSignature`: keccak256(address(this), from, to, value, fee, deadline, sigId)
+    bytes32 public sigDestinationTransferFrom = keccak256(
+        "address Token Contract Address",
+        "address Address Authorized for Withdrawal",
+        "address Sender's Address",
+        "address Recipient's Address",
+        "uint256 Amount to Transfer (last six digits are decimals)",
+        "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
+        "uint256 Signature Expiration Timestamp (unix timestamp)",
+        "uint256 Signature ID"
+    ); // `transferViaSignature`: keccak256(address(this), signer, from, to, value, fee, deadline, sigId)
     bytes32 public sigDestinationApprove = keccak256(
         "address Token Contract Address",
         "address Withdraw Approval Address",
@@ -107,10 +117,10 @@ contract DTT {
     }
 
     /**
-     * Internal method that makes sure that signature corresponds to a given data and some other constraints are met.
+     * Internal method that makes sure that the given signature corresponds to a given data and is made by `signer`.
      */
     function requireSignature (
-        bytes32 data, address from, uint256 deadline, uint256 sigId, bytes sig, sigStandard std, sigDestination signDest
+        bytes32 data, address signer, uint256 deadline, uint256 sigId, bytes sig, sigStandard std, sigDestination signDest
     ) internal {
         bytes32 r;
         bytes32 s;
@@ -122,27 +132,29 @@ contract DTT {
         }
         if (v < 27)
             v += 27;
-        require(block.timestamp <= deadline && !usedSigIds[from][sigId]); // solium-disable-line security/no-block-members
+        require(block.timestamp <= deadline && !usedSigIds[signer][sigId]); // solium-disable-line security/no-block-members
         if (std == sigStandard.typed) { // Typed signature
             require(
-                from == ecrecover(
+                signer == ecrecover(
                     keccak256(
                         signDest == sigDestination.transfer
                             ? sigDestinationTransfer
                             : signDest == sigDestination.approve
                                 ? sigDestinationApprove
-                                : sigDestinationApproveAndCall,
+                                : signDest == sigDestination.approveAndCall
+                                    ? sigDestinationApproveAndCall
+                                    : sigDestinationTransferFrom,
                         data
                     ),
                     v, r, s
                 )
             );
         } else if (std == sigStandard.personal) { // Ethereum signed message signature
-            require(from == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s));
+            require(signer == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s));
         } else { // == 2; Signed string hash signature (the most expensive but universal)
-            require(from == ecrecover(keccak256(ethSignedMessagePrefix, "64", hexToString(data)), v, r, s));
+            require(signer == ecrecover(keccak256(ethSignedMessagePrefix, "64", hexToString(data)), v, r, s));
         }
-        usedSigIds[from][sigId] = true;
+        usedSigIds[signer][sigId] = true;
     }
 
     function hexToString (bytes32 sig) internal pure returns (bytes) { // /to-try/ convert to two uint256 and test gas
@@ -158,19 +170,29 @@ contract DTT {
      * This function distincts transaction signer from transaction executor. It allows anyone to transfer tokens
      * from the `from` account by providing a valid signature, which can only be obtained from the `from` account
      * owner.
-     * Note that passed parameters must be unique and cannot be passed twice (prevents replay attacks). When there's
-     * a need to get a signature for the same transaction again, adjust the `deadline` parameter accordingly.
+     * Note that passed parameter sigId is unique and cannot be passed twice (prevents replay attacks). When there's
+     * a need to make signature once again (because the first on is lost or whatever), user should sign the message
+     * with the same sigId, thus ensuring that the previous signature won't be used if the new one passes.
+     * Use case: the user wants to send some tokens to other user or smart contract, but don't have ether to do so.
+     * @param from - the account giving its signature to transfer `value` tokens to `to` address
+     * @param to - the account receiving `value` tokens
+     * @param value - the value in tokens to transfer
+     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param deadline - until when the signature is valid
+     * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
+     * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+     * @param sigStd - chosen standard for signature validation. The signer must explicitely tell which standard they use
      */
     function transferViaSignature (
-        address from,      // Account to transfer tokens from, which signed all below parameters
-        address to,        // Account to transfer tokens to
-        uint256 value,     // Value to transfer
-        uint256 fee,       // Fee paid to transaction executor
-        uint256 deadline,  // Time until the transaction can be executed by the delegate
-        uint256 sigId,     // A "nonce" for the transaction. The same sigId cannot be used twice
-        bytes   sig,       // Signature made by `from`, which is the proof of `from`'s agreement with the above parameters
-        sigStandard sigStd // Determines how signature was made, because some standards are not implemented in some wallets (yet)
-    ) public returns (bool) {
+        address     from,
+        address     to,
+        uint256     value,
+        uint256     fee,
+        uint256     deadline,
+        uint256     sigId,
+        bytes       sig,
+        sigStandard sigStd
+    ) external returns (bool) {
         requireSignature(
             keccak256(address(this), from, to, value, fee, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.transfer
@@ -193,6 +215,34 @@ contract DTT {
     }
 
     /**
+     * Same as `transferViaSignature`, but for `transferFrom`.
+     * Use case: the user wants to withdraw tokens from a smart contract or user who allowed the user to do so.
+     * @param from - the address to transfer tokens from
+     * @param to - the address of the recipient
+     * @param value - the amount to send
+     */
+    function transferFromViaSignature (
+        address     signer,
+        address     from,
+        address     to,
+        uint256     value,
+        uint256     fee,
+        uint256     deadline,
+        uint256     sigId,
+        bytes       sig,
+        sigStandard sigStd
+    ) external returns (bool) {
+        requireSignature(
+            keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
+            signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
+        );
+        require(value <= allowance[from][signer]);
+        allowance[from][signer] -= value;
+        internalTransfer(from, to, value);
+        return true;
+    }
+
+    /**
      * Allow `spender` to take `value` tokens from the transaction sender's account.
      * Beware that changing an allowance with this method brings the risk that someone may use both the old
      * and the new allowance by unfortunate transaction ordering. One possible solution to mitigate this
@@ -208,18 +258,28 @@ contract DTT {
     }
 
     /**
-     * Same as `transferViaSignature`, but for approval.
+     * Same as `transferViaSignature`, but for `approve`.
+     * Use case: the user wants to set an allowance for the smart contract or another user without having ether on their
+     * balance.
+     * @param from - the account to approve withdrawal from, which signed all below parameters
+     * @param spender - the account allowed to withdraw tokens from `from` address
+     * @param value - the value in tokens to approve to withdraw
+     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param deadline - until when the signature is valid
+     * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
+     * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+     * @param sigStd - chosen standard for signature validation. The signer must explicitely tell which standard they use
      */
     function approveViaSignature (
-        address from,     // Account to approve expenses on, which signed all below parameters
-        address spender,  // Account to allow to do expenses
-        uint256 value,    // Value to approve
-        uint256 fee,      // Fee paid to transaction executor
-        uint256 deadline, // Time until the transaction can be executed by the executor
-        uint256 sigId,    // A "nonce" for the transaction. The same sigId cannot be used twice
-        bytes   sig,      // Signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+        address     from,
+        address     spender,
+        uint256     value,
+        uint256     fee,
+        uint256     deadline,
+        uint256     sigId,
+        bytes       sig,
         sigStandard sigStd
-    ) public returns (bool) {
+    ) external returns (bool) {
         requireSignature(
             keccak256(address(this), from, spender, value, fee, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.approve
@@ -245,19 +305,29 @@ contract DTT {
     }
 
     /**
-     * Same as `approveViaSignature`, but for approveAndCall.
+     * Same as `approveViaSignature`, but for `approveAndCall`.
+     * Use case: the user wants to send tokens to the smart contract and pass additional data within one transaction.
+     * @param from - the account to approve withdrawal from, which signed all below parameters
+     * @param spender - the account allowed to withdraw tokens from `from` address (in this case, smart contract only)
+     * @param value - the value in tokens to approve to withdraw
+     * @param extraData - additional data to pass to the `spender` smart contract
+     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param deadline - until when the signature is valid
+     * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
+     * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+     * @param sigStd - chosen standard for signature validation. The signer must explicitely tell which standard they use
      */
     function approveAndCallViaSignature (
-        address from,      // Account to approve expenses on, which signed all below parameters
-        address spender,   // Account to allow to do expenses
-        uint256 value,     // Value to transfer
-        bytes   extraData, // Additional data to pass to a `tokenRecipient`
-        uint256 fee,       // Fee paid to transaction executor
-        uint256 deadline,  // Time until the transaction can be executed by the delegate
-        uint256 sigId,     // A "nonce" for the transaction. The same sigId cannot be used twice
-        bytes   sig,       // Signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+        address     from,
+        address     spender,
+        uint256     value,
+        bytes       extraData,
+        uint256     fee,
+        uint256     deadline,
+        uint256     sigId,
+        bytes       sig,
         sigStandard sigStd
-    ) public returns (bool) {
+    ) external returns (bool) {
         requireSignature(
             keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.approveAndCall
