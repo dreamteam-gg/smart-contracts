@@ -199,7 +199,7 @@ contract DTT {
      * @param deadline - until when the signature is valid
      * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
-     * @param sigStd - chosen standard for signature validation. The signer must explicitely tell which standard they use
+     * @param sigStd - chosen standard for signature validation. The signer must explicitly tell which standard they use
      */
     function transferViaSignature (
         address     from,
