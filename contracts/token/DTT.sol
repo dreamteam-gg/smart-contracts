@@ -49,7 +49,7 @@ contract DTT {
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
-    ); // `transferViaSignature`: keccak256(address(this), signer, from, to, value, fee, deadline, sigId)
+    ); // `transferFromViaSignature`: keccak256(address(this), signer, from, to, value, fee, deadline, sigId)
     bytes32 public sigDestinationApprove = keccak256(
         "address Token Contract Address",
         "address Withdrawal Approval Address",
