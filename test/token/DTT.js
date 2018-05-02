@@ -74,7 +74,7 @@ contract("DTT", (accounts) => {
     const SIG_STANDARD_TYPED = 0;
     const SIG_STANDARD_PERSONAL = 1;
     const SIG_STANDARD_HEX_STRING = 2;
-    const someAccount = accounts[0];
+    const tokenDeployerAccount = accounts[0];
     const dreamTeamAccount = accounts[1];
     const account1 = accounts[2];
     const strangerAccount = accounts[9];
@@ -99,9 +99,9 @@ contract("DTT", (accounts) => {
             assert.equal(balance, 0);
         });
 
-        it("Token must be deployed from DreamTeam address", async function () {
+        it("Token must be deployed from tokenDeployerAccount address", async function () {
             const address = await token.tokenDistributor.call();
-            assert.equal(address, dreamTeamAccount);
+            assert.equal(address, tokenDeployerAccount);
         });
 
         it("DreamTeam address must not have any tokens", async function () {
@@ -147,10 +147,10 @@ contract("DTT", (accounts) => {
             assert.fail("Anonymous account can mint tokens");
         });
 
-        it("Must allow DreamTeam to mint tokens", async function () {
+        it("Must only allow tokenDeployerAccount to mint tokens", async function () {
             const toMint = 20000;
             const tx = await token.multiMint([strangerAccount], [toMint * 10 ** decimals], {
-                from: dreamTeamAccount
+                from: tokenDeployerAccount
             });
             totalSupply += toMint * 10 ** decimals;
             const tokens = await token.balanceOf.call(strangerAccount);
@@ -160,14 +160,14 @@ contract("DTT", (accounts) => {
             infoLog(`TX (multiMint for 1 account) gas usage: ${ getUsedGas(tx) }`);
         });
 
-        it("Must allow DreamTeam to mint tokens for 7 accounts", async function () {
+        it("Must allow tokenDeployerAccount to mint tokens for 7 accounts", async function () {
             const accCount = 7;
             const todo = accounts.slice(2, 2 + accCount).map(address => ({ 
                 address,
                 tokens: (10000 + Math.round(Math.random() * 1000)) * 10 ** decimals
             }));
             const tx = await token.multiMint(todo.map(x => x.address), todo.map(x => x.tokens), {
-                from: dreamTeamAccount
+                from: tokenDeployerAccount
             });
             totalSupply += todo.map(x => x.tokens).reduce((a, b) => a + b);
             const balances = (await Promise.all(todo.map(x => token.balanceOf.call(x.address)))).map(x => +x);
@@ -195,7 +195,7 @@ contract("DTT", (accounts) => {
                 const table = groups[i];
                 infoLog(`Processing a group ${ i + 1 }/${ groups.length } of ${ table.length } accounts`);
                 const tx = await token.multiMint(table.map(x => x.address), table.map(x => x.value), {
-                    from: dreamTeamAccount
+                    from: tokenDeployerAccount
                 });
                 totalGas += tx.receipt.gasUsed;
                 infoLog(`TX gas usage: ${ getUsedGas(tx) }`);
@@ -222,33 +222,36 @@ contract("DTT", (accounts) => {
             assert.fail("Anonymous account can close token distribution");
         });
 
-        it("Must allow DreamTeam to close token distribution event", async function () {
+        it("Must allow tokenDeployerAccount to close token distribution event", async function () {
             const tx = await token.lastMint({
-                from: dreamTeamAccount
+                from: tokenDeployerAccount
             });
             infoLog(`TX (lastMint) gas usage: ${ getUsedGas(tx) }`);
-            const expectedDreamTeamBalance = Math.floor(totalSupply * 40 / 60) 
+            const expectedDeployerBalance = Math.floor(totalSupply * 40 / 60) 
                 - ((Math.floor(totalSupply * 40 / 60) + totalSupply) % Math.pow(10, decimals));
             assert.equal(
-                +(await token.balanceOf.call(dreamTeamAccount)),
-                expectedDreamTeamBalance, 
+                +(await token.balanceOf.call(tokenDeployerAccount)),
+                expectedDeployerBalance, 
                 `Unexpected DreamTeam balance`
             );
-            infoLog(`DreamTeam gets remaining 40% tokens, ${ expectedDreamTeamBalance } DTT`);
-            totalSupply += expectedDreamTeamBalance;
+            infoLog(`tokenDeployerAccount gets remaining 40% tokens, ${ expectedDeployerBalance } DTT`);
+            totalSupply += expectedDeployerBalance;
             assert.equal(+(await token.totalSupply.call()), totalSupply, `Unexpected totalSupply`);
             infoLog(`DTT total supply is ${ totalSupply }`);
+            token.transfer(dreamTeamAccount, Math.floor(expectedDeployerBalance / 2), {
+                from: tokenDeployerAccount
+            });
         });
 
-        it("Must not allow DreamTeam to issue tokens anymore", async function () {
+        it("Must not allow tokenDeployerAccount to issue tokens anymore", async function () {
             try {
                 const tx = await token.multiMint([strangerAccount], [toMint * 10 ** decimals], {
-                    from: dreamTeamAccount
+                    from: tokenDeployerAccount
                 });
             } catch (e) {
                 return assert.ok(true);
             }
-            assert.fail("DreamTeam can still mint tokens");
+            assert.fail("tokenDeployerAccount can still mint tokens");
         });
 
         it("Must not allow anyone to issue tokens anyway", async function () {
@@ -600,7 +603,7 @@ contract("DTT", (accounts) => {
             value = 10 * 10 ** decimals;
             signer = strangerAccount;
             from = dreamTeamAccount;
-            to = someAccount;
+            to = tokenDeployerAccount;
             delegate = account1;
             fee = 1 * 10 ** decimals;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
@@ -654,20 +657,20 @@ contract("DTT", (accounts) => {
 
         it("Must allow to rescue tokens accidentally sent to a smart contract address", async function () {
             const strangerBalance = +(await token.balanceOf.call(strangerAccount));
-            const dreamTeamBalance = +(await token.balanceOf.call(dreamTeamAccount));
+            const dreamTeamBalance = +(await token.balanceOf.call(tokenDeployerAccount));
             const value = 1 * 10 ** decimals;
             const tx1 = await token.transfer(token.address, value, {
                 from: strangerAccount
             });
             assert.equal(+(await token.balanceOf.call(strangerAccount)), strangerBalance - value, "Stranger loses tokens");
             const tx2 = await token.rescueTokens(token.address, value, {
-                from: dreamTeamAccount
+                from: tokenDeployerAccount
             });
             const tx3 = await token.transferFrom(token.address, strangerAccount, value, {
-                from: dreamTeamAccount
+                from: tokenDeployerAccount
             });
             const strangerBalance2 = +(await token.balanceOf.call(strangerAccount));
-            const dreamTeamBalance2 = +(await token.balanceOf.call(dreamTeamAccount));
+            const dreamTeamBalance2 = +(await token.balanceOf.call(tokenDeployerAccount));
             assert.equal(strangerBalance2, strangerBalance, "Stranger must get their tokens back");
             assert.equal(dreamTeamBalance2, dreamTeamBalance, "DreamTeam balance must stay the same");
         });

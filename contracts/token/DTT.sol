@@ -94,8 +94,8 @@ contract DTT {
      */
     function internalDoubleTransfer (address from, address to1, uint value1, address to2, uint value2) internal {
         require( // Prevent people from accidentally burning their tokens + uint256 wrap prevention
-            to1 != 0x0 && to2 != 0x0 && balanceOf[from] >=
-            value1 + value2 && balanceOf[to1] + value1 >= balanceOf[to1] && balanceOf[to2] + value2 >= balanceOf[to2]
+            to1 != 0x0 && to2 != 0x0 && value1 + value2 >= value1 && balanceOf[from] >= value1 + value2
+            && balanceOf[to1] + value1 >= balanceOf[to1] && balanceOf[to2] + value2 >= balanceOf[to2]
         );
         balanceOf[from] -= value1 + value2;
         balanceOf[to1] += value1;
@@ -221,7 +221,7 @@ contract DTT {
 
     /**
      * Allow `spender` to take `value` tokens from the transaction sender's account.
-     * Beware that changing an allowance with this method brings the risk that someone may use both the old
+     * Beware that changing an allowance with this method brings the risk that `spender` may use both the old
      * and the new allowance by unfortunate transaction ordering. One possible solution to mitigate this
      * race condition is to first reduce the spender's allowance to 0 and set the desired value afterwards:
      * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
@@ -263,7 +263,7 @@ contract DTT {
         );
         allowance[from][spender] = value;
         emit Approval(from, spender, value);
-        internalTransfer(from, msg.sender, value);
+        internalTransfer(from, msg.sender, fee);
         return true;
     }
 
@@ -305,7 +305,7 @@ contract DTT {
         );
         require(value <= allowance[from][signer] && value >= fee);
         allowance[from][signer] -= value;
-        internalDoubleTransfer(from, msg.sender, fee, to, value - fee);
+        internalDoubleTransfer(from, to, value - fee, msg.sender, fee);
         return true;
     }
 
@@ -354,7 +354,7 @@ contract DTT {
         allowance[from][spender] = value;
         emit Approval(from, spender, value);
         tokenRecipient(spender).receiveApproval(from, value, this, extraData);
-        internalTransfer(from, msg.sender, value);
+        internalTransfer(from, msg.sender, fee);
         return true;
     }
 
