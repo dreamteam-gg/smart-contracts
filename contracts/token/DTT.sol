@@ -69,6 +69,9 @@ contract DTT {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
+    modifier rescueAccountOnly {require(msg.sender == rescueAccount); _;}
+    modifier tokenDistributionPeriodOnly {require(tokenDistributor != 0x0 && tokenDistributor == msg.sender); _;}
+
     bytes public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n";
     enum sigStandard { typed, personal, stringHex }
     enum sigDestination { transfer, approve, approveAndCall, transferFrom }
@@ -396,13 +399,14 @@ contract DTT {
     /**
      * `tokenDistributor` is authorized to distribute tokens to the parties who participated in the token sale by the
      * time the `lastMint` function is triggered, which closes the ability to mint any new tokens forever.
-     * @param recipients - Addresses of token recipients
-     * @param amounts - Corresponding amount of each token recipient in `recipients`
+     * Once the token distribution even ends (lastMint is triggered), tokenDistributor will become 0x0 and multiMint
+     * function will never work again.
+     * @param recipients - addresses of token recipients
+     * @param amounts - corresponding amount of each token recipient in `recipients`
      */
-    function multiMint (address[] recipients, uint256[] amounts) external {
+    function multiMint (address[] recipients, uint256[] amounts) external tokenDistributionPeriodOnly {
         
-        // Once the token distribution ends, tokenDistributor will become 0x0 and multiMint will never work
-        require(tokenDistributor != 0x0 && tokenDistributor == msg.sender && recipients.length == amounts.length);
+        require(recipients.length == amounts.length);
 
         uint total = 0;
 
@@ -420,9 +424,9 @@ contract DTT {
      * The last mint that will ever happen. Disables the multiMint function and mints remaining 40% of tokens (in
      * regard of 60% tokens minted before) to a `tokenDistributor` address.
      */
-    function lastMint () external {
+    function lastMint () external tokenDistributionPeriodOnly {
 
-        require(tokenDistributor != 0x0 && tokenDistributor == msg.sender && totalSupply > 0);
+        require(totalSupply > 0);
 
         uint256 remaining = totalSupply.mul(40).div(60); // Portion of tokens for DreamTeam (40%)
 
@@ -444,21 +448,19 @@ contract DTT {
      * ERC20 tokens are not designed to hold any other tokens (or Ether) on their balances. There were thousands of cases
      * when people accidentally transfer tokens to a contract address while there is no way to get them back.
      * This function adds a possibility to "rescue" tokens that were accidentally sent to this smart contract.
-     * @param tokenContract - ERC20-compatible token, not necessarily DTT token.
-     * @param value - Amount to rescue
+     * @param tokenContract - ERC20-compatible token, not necessarily DTT token
+     * @param value - amount to rescue
      */
-    function rescueTokens (ERC20CompatibleToken tokenContract, uint256 value) public {
-        require(msg.sender == rescueAccount);
+    function rescueLostTokens (ERC20CompatibleToken tokenContract, uint256 value) external rescueAccountOnly {
         tokenContract.approve(rescueAccount, value);
     }
 
     /**
      * Utility function that allows to change the rescueAccount address, which can "rescue" tokens accidentally sent to
      * this smart contract address.
-     * @param newRescueAccount - Account which will become authorized to rescue tokens.
+     * @param newRescueAccount - account which will become authorized to rescue tokens
      */
-    function changeRescueAccount (address newRescueAccount) public {
-        require(msg.sender == rescueAccount);
+    function changeRescueAccount (address newRescueAccount) external rescueAccountOnly {
         rescueAccount = newRescueAccount;
     }
 

@@ -682,7 +682,7 @@ contract("DTT", (accounts) => {
                 from: strangerAccount
             });
             assert.equal(+(await token.balanceOf.call(strangerAccount)), strangerBalance - value, "Stranger loses tokens");
-            const tx2 = await token.rescueTokens(token.address, value, {
+            const tx2 = await token.rescueLostTokens(token.address, value, {
                 from: tokenDeployerAccount
             });
             const tx3 = await token.transferFrom(token.address, strangerAccount, value, {
