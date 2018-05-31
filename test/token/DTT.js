@@ -444,6 +444,25 @@ contract("DTT", (accounts) => {
 
         });
 
+        it("Allows pre-signed transfer with zero fee", async function () {
+
+            deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const fee = 0;
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign, from);
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) with no fee gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
         it("Allows pre-signed transfer using personal hex string sign standard", async function () {
 
             value = 4 * 10 ** decimals;
@@ -673,6 +692,22 @@ contract("DTT", (accounts) => {
             const dreamTeamBalance2 = +(await token.balanceOf.call(tokenDeployerAccount));
             assert.equal(strangerBalance2, strangerBalance, "Stranger must get their tokens back");
             assert.equal(dreamTeamBalance2, dreamTeamBalance, "DreamTeam balance must stay the same");
+        });
+
+    });
+
+    describe("Edge cases and overflow checks", () => {
+
+        it("Must not allow to transfer more than an account owns", async function () {
+            const strangerBalance = +(await token.balanceOf.call(strangerAccount));
+            try {
+                const tx1 = await token.transfer(dreamTeamAccount, strangerBalance + 1, {
+                    from: strangerAccount
+                });
+            } catch (e) {
+                return assert.ok(true, `Cannot transfer more than ${ strangerBalance } tokens`);
+            }
+            return assert.fail("Allows to transfer more tokens than allowed");
         });
 
     });

@@ -1,7 +1,42 @@
-pragma solidity ^0.4.23;
+pragma solidity ^0.4.24;
 
 interface tokenRecipient {
     function receiveApproval (address from, uint256 value, address token, bytes extraData) external;
+}
+
+/**
+ * @title SafeMath
+ * @dev Math operations with safety checks that throw on overflows.
+ */
+library SafeMath {
+    
+    function mul (uint256 a, uint256 b) internal pure returns (uint256 c) {
+        if (a == 0) {
+            return 0;
+        }
+        c = a * b;
+        require(c / a == b);
+        return c;
+    }
+    
+    function div (uint256 a, uint256 b) internal pure returns (uint256) {
+        // assert(b > 0); // Solidity automatically throws when dividing by 0
+        // uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+        return a / b;
+    }
+    
+    function sub (uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b <= a);
+        return a - b;
+    }
+
+    function add (uint256 a, uint256 b) internal pure returns (uint256 c) {
+        c = a + b;
+        require(c >= a);
+        return c;
+    }
+
 }
 
 /**
@@ -10,10 +45,12 @@ interface tokenRecipient {
  * 2. Additional utility function approveAndCall. [OK]
  * 3. Function to rescue "lost forever" tokens, which were accidentally sent to the contract address. [OK]
  * 4. Additional transfer and approve functions which allow to distinct the transaction signer and executor,
- *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [ALPHA]
+ *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [OK]
  * 5. Token sale distribution rules. [OK]
  */
 contract DTT {
+
+    using SafeMath for uint256;
 
     string public name;
     string public symbol;
@@ -80,10 +117,9 @@ contract DTT {
      * Utility internal function used to safely transfer `value` tokens `from` -> `to`. Throws if transfer is impossible.
      */
     function internalTransfer (address from, address to, uint value) internal {
-        // Prevent people from accidentally burning their tokens + uint256 wrap prevention
-        require(to != 0x0 && balanceOf[from] >= value && balanceOf[to] + value >= balanceOf[to]);
-        balanceOf[from] -= value;
-        balanceOf[to] += value;
+        require(to != 0x0); // Prevent people from accidentally burning their tokens
+        balanceOf[from] = balanceOf[from].sub(value);
+        balanceOf[to] = balanceOf[to].add(value);
         emit Transfer(from, to, value);
     }
 
@@ -93,15 +129,12 @@ contract DTT {
      * transfers are impossible.
      */
     function internalDoubleTransfer (address from, address to1, uint value1, address to2, uint value2) internal {
-        require( // Prevent people from accidentally burning their tokens + uint256 wrap prevention
-            to1 != 0x0 && to2 != 0x0 && value1 + value2 >= value1 && balanceOf[from] >= value1 + value2
-            && balanceOf[to1] + value1 >= balanceOf[to1] && balanceOf[to2] + value2 >= balanceOf[to2]
-        );
-        balanceOf[from] -= value1 + value2;
-        balanceOf[to1] += value1;
+        require(to1 != 0x0 && to2 != 0x0); // Prevent people from accidentally burning their tokens
+        balanceOf[from] = balanceOf[from].sub(value1.add(value2));
+        balanceOf[to1] = balanceOf[to1].add(value1);
         emit Transfer(from, to1, value1);
         if (value2 > 0) {
-            balanceOf[to2] += value2;
+            balanceOf[to2] = balanceOf[to2].add(value2);
             emit Transfer(from, to2, value2);
         }
     }
@@ -274,8 +307,7 @@ contract DTT {
      * @param value - the amount to send
      */
     function transferFrom (address from, address to, uint256 value) public returns (bool) {
-        require(value <= allowance[from][msg.sender]); // Test whether allowance was set
-        allowance[from][msg.sender] -= value;
+        allowance[from][msg.sender] = allowance[from][msg.sender].sub(value);
         internalTransfer(from, to, value);
         return true;
     }
@@ -303,9 +335,8 @@ contract DTT {
             keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
             signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
         );
-        require(value <= allowance[from][signer] && value >= fee);
-        allowance[from][signer] -= value;
-        internalDoubleTransfer(from, to, value - fee, msg.sender, fee);
+        allowance[from][signer] = allowance[from][signer].sub(value);
+        internalDoubleTransfer(from, to, value.sub(fee), msg.sender, fee);
         return true;
     }
 
@@ -372,12 +403,12 @@ contract DTT {
         uint total = 0;
 
         for (uint i = 0; i < recipients.length; ++i) {
-            balanceOf[recipients[i]] += amounts[i];
-            total += amounts[i];
+            balanceOf[recipients[i]] = balanceOf[recipients[i]].add(amounts[i]);
+            total = total.add(amounts[i]);
             emit Transfer(0x0, recipients[i], amounts[i]);
         }
 
-        totalSupply += total;
+        totalSupply = totalSupply.add(total);
         
     }
 
@@ -389,25 +420,26 @@ contract DTT {
 
         require(tokenDistributor != 0x0 && tokenDistributor == msg.sender && totalSupply > 0);
 
-        uint256 remaining = totalSupply * 40 / 60; // Portion of tokens for DreamTeam (40%)
+        uint256 remaining = totalSupply.mul(40).div(60); // Portion of tokens for DreamTeam (40%)
 
         // To make the total supply rounded (no fractional part), subtract the fractional part from DreamTeam's balance
-        uint256 fractionalPart = (remaining + totalSupply) % (uint256(10) ** decimals);
-        if (fractionalPart <= remaining)
-            remaining -= fractionalPart; // Remove the fractional part to round the totalSupply
+        uint256 fractionalPart = remaining.add(totalSupply) % (uint256(10) ** decimals);
+        if (fractionalPart <= remaining) {
+            remaining = remaining.sub(fractionalPart); // Remove the fractional part to round the totalSupply
+        }
 
-        balanceOf[tokenDistributor] += remaining;
+        balanceOf[tokenDistributor] = balanceOf[tokenDistributor].add(remaining);
         emit Transfer(0x0, tokenDistributor, remaining);
 
-        totalSupply += remaining;
+        totalSupply = totalSupply.add(remaining);
         tokenDistributor = 0x0; // Disable multiMint and lastMint functions forever
 
     }
 
     /**
-     * ERC20 token is not designed to hold any tokens itself. This function allows to rescue tokens accidentally sent
-     * to the address of this smart contract.
-     * @param tokenContract - ERC-20 compatible token
+     * ERC20 token is not designed to hold any tokens on its balance.
+     * This function allows to rescue tokens, which was accidentally sent to the address of this smart contract.
+     * @param tokenContract - ERC-20 compatible token, not necessarily DTT token.
      * @param value - amount to rescue
      */
     function rescueTokens (DTT tokenContract, uint256 value) public {
