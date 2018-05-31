@@ -4,6 +4,10 @@ interface tokenRecipient {
     function receiveApproval (address from, uint256 value, address token, bytes extraData) external;
 }
 
+interface ERC20CompatibleToken {
+    function approve (address spender, uint256 value) external returns (bool);
+}
+
 /**
  * @title SafeMath
  * @dev Math operations with safety checks that throw on overflows.
@@ -437,19 +441,21 @@ contract DTT {
     }
 
     /**
-     * ERC20 token is not designed to hold any tokens on its balance.
-     * This function allows to rescue tokens, which was accidentally sent to the address of this smart contract.
-     * @param tokenContract - ERC-20 compatible token, not necessarily DTT token.
-     * @param value - amount to rescue
+     * ERC20 tokens are not designed to hold any other tokens (or Ether) on their balances. There were thousands of cases
+     * when people accidentally transfer tokens to a contract address while there is no way to get them back.
+     * This function adds a possibility to "rescue" tokens that were accidentally sent to this smart contract.
+     * @param tokenContract - ERC20-compatible token, not necessarily DTT token.
+     * @param value - Amount to rescue
      */
-    function rescueTokens (DTT tokenContract, uint256 value) public {
+    function rescueTokens (ERC20CompatibleToken tokenContract, uint256 value) public {
         require(msg.sender == rescueAccount);
         tokenContract.approve(rescueAccount, value);
     }
 
     /**
-     * Utility function that allows to change the rescueAccount address.
-     * @param newRescueAccount - account which will be authorized to rescue tokens.
+     * Utility function that allows to change the rescueAccount address, which can "rescue" tokens accidentally sent to
+     * this smart contract address.
+     * @param newRescueAccount - Account which will become authorized to rescue tokens.
      */
     function changeRescueAccount (address newRescueAccount) public {
         require(msg.sender == rescueAccount);
