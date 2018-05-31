@@ -9,8 +9,7 @@ interface ERC20CompatibleToken {
 }
 
 /**
- * @title SafeMath
- * @dev Math operations with safety checks that throw on overflows.
+ * Math operations with safety checks that throw on overflows.
  */
 library SafeMath {
     
@@ -51,7 +50,7 @@ library SafeMath {
  * 4. Additional transfer and approve functions which allow to distinct the transaction signer and executor,
  *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [OK]
  * 5. Token sale distribution rules. [OK]
- */
+ */ 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
 contract DTT {
 
     using SafeMath for uint256;
@@ -114,14 +113,21 @@ contract DTT {
         "uint256 Signature ID"
     ); // `approveAndCallViaSignature`: keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId)
 
+    /**
+     * @param tokenName - full token name, "DreamTeam Token"
+     * @param tokenSymbol - token symbol, "DTT"
+     */
     constructor (string tokenName, string tokenSymbol) public {
         name = tokenName;
         symbol = tokenSymbol;
         rescueAccount = tokenDistributor = msg.sender;
-    }
+    } 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
 
     /**
      * Utility internal function used to safely transfer `value` tokens `from` -> `to`. Throws if transfer is impossible.
+     * @param from - account to make the transfer from
+     * @param to - account to transfer `value` tokens to
+     * @param value - tokens to transfer to account `to`
      */
     function internalTransfer (address from, address to, uint value) internal {
         require(to != 0x0); // Prevent people from accidentally burning their tokens
@@ -134,6 +140,11 @@ contract DTT {
      * Utility internal function used to safely transfer `value1` tokens `from` -> `to1`, and `value2` tokens
      * `from` -> `to2`, minimizing gas usage (calling `internalTransfer` twice is more expensive). Throws if
      * transfers are impossible.
+     * @param from - account to make the transfer from
+     * @param to1 - account to transfer `value1` tokens to
+     * @param value1 - tokens to transfer to account `to1`
+     * @param to2 - account to transfer `value2` tokens to
+     * @param value2 - tokens to transfer to account `to2`
      */
     function internalDoubleTransfer (address from, address to1, uint value1, address to2, uint value2) internal {
         require(to1 != 0x0 && to2 != 0x0); // Prevent people from accidentally burning their tokens
@@ -154,30 +165,43 @@ contract DTT {
      * Ethereum personal_sign but rather personal_sign with fixed prefix and so on.
      * Note that it is always possible to forge any of these signatures using the private key, the problem is that
      * third-party wallets must adopt a single standard for signing messages.
+     * @param data - original data which had to be signed by `signer`
+     * @param signer - account which made a signature
+     * @param deadline - until when the signature is valid
+     * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
+     * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+     * @param sigStd - chosen standard for signature validation. The signer must explicitly tell which standard they use
+     * @param sigDest - for which type of action this signature was made for
      */
     function requireSignature (
-        bytes32 data, address signer, uint256 deadline, uint256 sigId, bytes sig, sigStandard std, sigDestination signDest
+        bytes32 data,
+        address signer,
+        uint256 deadline,
+        uint256 sigId,
+        bytes sig,
+        sigStandard sigStd,
+        sigDestination sigDest
     ) internal {
         bytes32 r;
         bytes32 s;
         uint8 v;
         assembly { // solium-disable-line security/no-inline-assembly
             r := mload(add(sig, 32))
-            s := mload(add(sig, 64))
+            s := mload(add(sig, 64)) 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
             v := byte(0, mload(add(sig, 96)))
         }
         if (v < 27)
             v += 27;
         require(block.timestamp <= deadline && !usedSigIds[signer][sigId]); // solium-disable-line security/no-block-members
-        if (std == sigStandard.typed) { // Typed signature. This is the most likely scenario to be used and accepted
+        if (sigStd == sigStandard.typed) { // Typed signature. This is the most likely scenario to be used and accepted
             require(
                 signer == ecrecover(
                     keccak256(
-                        signDest == sigDestination.transfer
+                        sigDest == sigDestination.transfer
                             ? sigDestinationTransfer
-                            : signDest == sigDestination.approve
+                            : sigDest == sigDestination.approve
                                 ? sigDestinationApprove
-                                : signDest == sigDestination.approveAndCall
+                                : sigDest == sigDestination.approveAndCall
                                     ? sigDestinationApproveAndCall
                                     : sigDestinationTransferFrom,
                         data
@@ -185,7 +209,7 @@ contract DTT {
                     v, r, s
                 )
             );
-        } else if (std == sigStandard.personal) { // Ethereum signed message signature (Geth and Trezor)
+        } else if (sigStd == sigStandard.personal) { // Ethereum signed message signature (Geth and Trezor)
             require(
                 signer == ecrecover(keccak256(ethSignedMessagePrefix, "32", data), v, r, s) // Geth-adopted
                 ||
@@ -203,7 +227,7 @@ contract DTT {
 
     /**
      * Utility costly function to encode bytes HEX representation as string.
-     * @param sig - signature to encode.
+     * @param sig - signature as bytes32 to represent as string.
      */
     function hexToString (bytes32 sig) internal pure returns (bytes) { // /to-try/ convert to two uint256 and test gas
         bytes memory str = new bytes(64);
@@ -241,7 +265,7 @@ contract DTT {
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
      * @param sigStd - chosen standard for signature validation. The signer must explicitly tell which standard they use
      */
-    function transferViaSignature (
+    function transferViaSignature ( 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
         address     from,
         address     to,
         uint256     value,
@@ -323,9 +347,15 @@ contract DTT {
      * Same as `transferViaSignature`, but for `transferFrom`.
      * Use case: the user wants to withdraw tokens from a smart contract or another user who allowed the user to do so.
      * Important note: fee is subtracted from `value` before it reaches `to`.
-     * @param from - the address to transfer tokens from
+     * @param signer - the address allowed to call transferFrom, which signed all below parameters
+     * @param from - the account to make withdrawal from
      * @param to - the address of the recipient
-     * @param value - the amount to send
+     * @param value - the value in tokens to withdraw
+     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param deadline - until when the signature is valid
+     * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
+     * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
+     * @param sigStd - chosen standard for signature validation. The signer must explicitly tell which standard they use
      */
     function transferFromViaSignature (
         address     signer,
@@ -337,7 +367,7 @@ contract DTT {
         uint256     sigId,
         bytes       sig,
         sigStandard sigStd
-    ) external returns (bool) {
+    ) external returns (bool) { 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
         requireSignature(
             keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
             signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
@@ -394,7 +424,7 @@ contract DTT {
         tokenRecipient(spender).receiveApproval(from, value, this, extraData);
         internalTransfer(from, msg.sender, fee);
         return true;
-    }
+    } 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
 
     /**
      * `tokenDistributor` is authorized to distribute tokens to the parties who participated in the token sale by the
@@ -419,7 +449,7 @@ contract DTT {
         totalSupply = totalSupply.add(total);
         
     }
-
+ 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
     /**
      * The last mint that will ever happen. Disables the multiMint function and mints remaining 40% of tokens (in
      * regard of 60% tokens minted before) to a `tokenDistributor` address.
@@ -459,9 +489,9 @@ contract DTT {
      * Utility function that allows to change the rescueAccount address, which can "rescue" tokens accidentally sent to
      * this smart contract address.
      * @param newRescueAccount - account which will become authorized to rescue tokens
-     */
+     */ 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
     function changeRescueAccount (address newRescueAccount) external rescueAccountOnly {
         rescueAccount = newRescueAccount;
     }
-
+ 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
 }
