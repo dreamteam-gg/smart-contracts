@@ -6,12 +6,6 @@ Currently all smart contracts in this repository [are used](https://ropsten.ethe
 test network (Ropsten). Smart contracts on the live network (mainnet) can be slightly different due to the active
 development process.
 
-## Smart Contracts Source Code (entry points)
-
-+ [DreamTeam Test Token (DTT)](contracts/token/DTT.sol) (potential DreamTeam token contract in Ethereum test network)
-+ [DreamTeam Test Token (TDTT)](contracts/token/TDTT.sol) (This version of the test token was used on the Ethereum test network until 5/7/2018)
-+ [Team Contracts Manager Contract](contracts/teams/TeamContracts.sol) (smart contract for team compensation payments)
-
 ## Description
 
 This repository contains smart contracts used within the DreamTeam platform. Some of these smart contracts are
@@ -32,7 +26,18 @@ which need to be paid out, for a small token fee. If DreamTeam for some unknown 
 trigger payouts, team members themselves can trigger them, by using any services publicly available like 
 [Etherscan](https://ropsten.etherscan.io), MyEtherWallet, or others to trigger the payout.
 
-## Smart Contract Addresses (Test Network)
+## Smart Contracts Source Code (entry points)
+
++ [DreamTeam Test Token (DTT)](contracts/token/DTT.sol) (potential DreamTeam token contract in Ethereum test network)
++ [DreamTeam Test Token (TDTT)](contracts/token/TDTT.sol) (This version of the test token was used on the Ethereum test network until 5/7/2018)
++ [Team Contracts Manager Contract](contracts/teams/TeamContracts.sol) (smart contract for team compensation payments)
+
+## Smart Contract Audits
+
++ TeamContracts, DreamTeam Test Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-smart-contract-for-players-compensation/)
++ DreamTeam Token: Coinfabrik (in progress)
+
+## Smart Contract Addresses
 
 + TeamContracts: [0x7ddb3d916877366b0cce9e034c0b748773301308](https://ropsten.etherscan.io/address/0x7ddb3d916877366b0cce9e034c0b748773301308)
 + DreamTeam Test Token (DTT): [0xcad9c6677f51b936408ca3631220c9e45a9af0f6](https://ropsten.etherscan.io/token/0xcad9c6677f51b936408ca3631220c9e45a9af0f6)
