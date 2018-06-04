@@ -1,5 +1,5 @@
 const Storage = artifacts.require("DreamTeamStorage");
-const Token = artifacts.require("TDTT");
+const Token = artifacts.require("DreamTeamToken");
 const TeamContracts = artifacts.require("TeamContracts"); // Main contract!
 
 const tokenDecimals = 6;

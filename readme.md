@@ -28,7 +28,7 @@ trigger payouts, team members themselves can trigger them, by using any services
 
 ## Smart Contracts Source Code (entry points)
 
-+ [DreamTeam Test Token (DTT)](contracts/token/DTT.sol) (potential DreamTeam token contract in Ethereum test network)
++ [DreamTeam Test Token (DreamTeam Token)](contracts/token/DreamTeamToken.sol) (potential DreamTeam token contract in Ethereum test network)
 + [DreamTeam Test Token (TDTT)](contracts/token/TDTT.sol) (This version of the test token was used on the Ethereum test network until 5/7/2018)
 + [Team Contracts Manager Contract](contracts/teams/TeamContracts.sol) (smart contract for team compensation payments)
 
@@ -40,5 +40,5 @@ trigger payouts, team members themselves can trigger them, by using any services
 ## Smart Contract Addresses
 
 + TeamContracts: [0x7ddb3d916877366b0cce9e034c0b748773301308](https://ropsten.etherscan.io/address/0x7ddb3d916877366b0cce9e034c0b748773301308)
-+ DreamTeam Test Token (DTT): [0xcad9c6677f51b936408ca3631220c9e45a9af0f6](https://ropsten.etherscan.io/token/0xcad9c6677f51b936408ca3631220c9e45a9af0f6)
++ DreamTeam Test Token (DreamTeam Token): [0xcad9c6677f51b936408ca3631220c9e45a9af0f6](https://ropsten.etherscan.io/token/0xcad9c6677f51b936408ca3631220c9e45a9af0f6)
 + DreamTeam Test Token (TDTT): [0x671c81d8731f9582f17e7519f46243040e7d9642](https://ropsten.etherscan.io/token/0x671c81d8731f9582f17e7519f46243040e7d9642)

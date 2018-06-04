@@ -51,7 +51,7 @@ library SafeMath {
  *    which enables accounts with no Ether on their balances to make token transfers and use DreamTeam services. [OK]
  * 5. Token sale distribution rules. [OK]
  */ 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
-contract DTT {
+contract DreamTeamToken {
 
     using SafeMath for uint256;
 
@@ -114,8 +114,8 @@ contract DTT {
     ); // `approveAndCallViaSignature`: keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId)
 
     /**
-     * @param tokenName - full token name, "DreamTeam Token"
-     * @param tokenSymbol - token symbol, "DTT"
+     * @param tokenName - full token name
+     * @param tokenSymbol - token symbol
      */
     constructor (string tokenName, string tokenSymbol) public {
         name = tokenName;
@@ -227,7 +227,7 @@ contract DTT {
 
     /**
      * Utility costly function to encode bytes HEX representation as string.
-     * @param sig - signature as bytes32 to represent as string.
+     * @param sig - signature as bytes32 to represent as string
      */
     function hexToString (bytes32 sig) internal pure returns (bytes) { // /to-try/ convert to two uint256 and test gas
         bytes memory str = new bytes(64);
@@ -478,7 +478,7 @@ contract DTT {
      * ERC20 tokens are not designed to hold any other tokens (or Ether) on their balances. There were thousands of cases
      * when people accidentally transfer tokens to a contract address while there is no way to get them back.
      * This function adds a possibility to "rescue" tokens that were accidentally sent to this smart contract.
-     * @param tokenContract - ERC20-compatible token, not necessarily DTT token
+     * @param tokenContract - ERC20-compatible token
      * @param value - amount to rescue
      */
     function rescueLostTokens (ERC20CompatibleToken tokenContract, uint256 value) external rescueAccountOnly {

@@ -1,4 +1,4 @@
-const DTT = artifacts.require("DTT");
+const Token = artifacts.require("DreamTeamToken");
 const Web3 = require("web3"); // Latest web3 version
 web3m = new Web3(web3.currentProvider);
 const sigUtils = require("eth-sig-util");
@@ -85,7 +85,7 @@ contract("DTT", (accounts) => {
         sigId = 0;
 
     before(async function () {
-        token = await DTT.deployed();
+        token = await Token.deployed();
         infoLog(`Deployed DTT address: ${ token.address }`);
         infoLog(
             `Estimations used for this test: ETH/USD=${ ethToUsdRate }, gasPrice=${ gasPrice / Math.pow(10, 9) } GWei`

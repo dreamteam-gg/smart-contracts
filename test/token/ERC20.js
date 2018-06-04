@@ -3,7 +3,7 @@
  * @link https://github.com/OpenZeppelin/zeppelin-solidity/blob/master/test/token/ERC20/StandardToken.test.js
  */
 
-const StandardTokenMock = artifacts.require('DTT');
+const StandardTokenMock = artifacts.require('DreamTeamToken');
 
 const assertRevert = async promise => {
   try {
