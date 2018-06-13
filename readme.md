@@ -35,7 +35,7 @@ trigger payouts, team members themselves can trigger them, by using any services
 ## Smart Contract Audits
 
 + TeamContracts, DreamTeam Test Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-smart-contract-for-players-compensation/)
-+ DreamTeam Token: Coinfabrik (in progress)
++ DreamTeam Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-token-audit/)
 
 ## Smart Contract Addresses
 
