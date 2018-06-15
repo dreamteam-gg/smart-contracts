@@ -399,11 +399,11 @@ contract("DTT", (accounts) => {
             delegate = dreamTeamAccount;
             fee = 1 * 10 ** decimals;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp - 60 * 60; // 1 hour ago
-            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             signature = await web3m.eth.sign(dataToSign, from);
             try {
                 await token.transferViaSignature(
-                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                    from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
                 );
             } catch (e) {
                 return assert.ok(true);
@@ -416,13 +416,13 @@ contract("DTT", (accounts) => {
 
             // Takes data from previous test
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
-            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
             signature = await web3m.eth.sign(dataToSign, from);
             const tx = await token.transferViaSignature(
-                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
             );
             infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
@@ -435,7 +435,7 @@ contract("DTT", (accounts) => {
 
             try {
                 await token.transferViaSignature(
-                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                    from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
                 );
             } catch (e) {
                 return assert.ok(true);
@@ -448,13 +448,13 @@ contract("DTT", (accounts) => {
 
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const fee = 0;
-            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
             signature = await web3m.eth.sign(dataToSign, from);
             const tx = await token.transferViaSignature(
-                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
             );
             infoLog(`TX (transferViaSignature) with no fee gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
@@ -471,13 +471,13 @@ contract("DTT", (accounts) => {
             delegate = dreamTeamAccount;
             fee = 2 * 10 ** decimals - 1;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
-            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, deadline, usedSigId = sigId++);
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
             signature = await web3m.eth.sign(dataToSign.slice(2), from);
             const tx = await token.transferViaSignature(
-                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
             );
             infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
@@ -490,7 +490,7 @@ contract("DTT", (accounts) => {
 
             try {
                 await token.transferViaSignature(
-                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
+                    from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
                 );
             } catch (e) {
                 return assert.ok(true);
@@ -529,6 +529,10 @@ contract("DTT", (accounts) => {
                 type: 'uint256',
                 name: 'Fee in Tokens Paid to Executor (last six digits are decimals)',
                 value: fee
+            }, {
+                type: 'address',
+                name: 'Account which will Receive Fee',
+                value: delegate
             }, {   
                 type: 'uint256',
                 name: 'Signature Expiration Timestamp (unix timestamp)',
@@ -548,7 +552,7 @@ contract("DTT", (accounts) => {
                 { data: dataToSign }
             );
             const tx = await token.transferViaSignature(
-                from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
             );
             infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
@@ -561,7 +565,7 @@ contract("DTT", (accounts) => {
 
             try {
                 await token.transferViaSignature(
-                    from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
+                    from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
                 );
             } catch (e) {
                 return assert.ok(true);
@@ -587,7 +591,7 @@ contract("DTT", (accounts) => {
             fee = 1 * 10 ** decimals;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const dataToSign = web3m.utils.soliditySha3(
-                token.address, signer, from, to, value, fee, deadline, usedSigId = sigId++
+                token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++
             );
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
@@ -596,7 +600,7 @@ contract("DTT", (accounts) => {
             await token.approve(signer, 0, { from });
             try {
                 await token.transferFromViaSignature(
-                    signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                    signer, from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
                 );
             } catch (e) {
                 caught = e;
@@ -605,7 +609,7 @@ contract("DTT", (accounts) => {
             }
             await token.approve(signer, value, { from });
             const tx = await token.transferFromViaSignature(
-                signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                signer, from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
             );
             infoLog(`TX (transferFromViaSignature) gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value, "Must subtract balance from `from`");
@@ -627,7 +631,7 @@ contract("DTT", (accounts) => {
             fee = 1 * 10 ** decimals;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const dataToSign = web3m.utils.soliditySha3(
-                token.address, signer, from, to, value, fee, deadline, usedSigId = sigId++
+                token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++
             );
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
@@ -637,7 +641,7 @@ contract("DTT", (accounts) => {
             await token.approve(signer, 0, { from });
             try {
                 await token.transferFromViaSignature(
-                    signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                    signer, from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
                 );
             } catch (e) {
                 caught = e;
@@ -646,7 +650,7 @@ contract("DTT", (accounts) => {
             }
             await token.approve(signer, value, { from });
             const tx = await token.transferFromViaSignature(
-                signer, from, to, value, fee, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+                signer, from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
             );
             infoLog(`TX (transferFromViaSignature) gas usage: ${ getUsedGas(tx) }`);
             assert.equal(+(await token.balanceOf(from)), balanceFrom - value, "Must subtract balance from `from`");
@@ -685,13 +689,10 @@ contract("DTT", (accounts) => {
             const tx2 = await token.rescueLostTokens(token.address, value, {
                 from: tokenDeployerAccount
             });
-            const tx3 = await token.transferFrom(token.address, strangerAccount, value, {
-                from: tokenDeployerAccount
-            });
             const strangerBalance2 = +(await token.balanceOf.call(strangerAccount));
             const dreamTeamBalance2 = +(await token.balanceOf.call(tokenDeployerAccount));
-            assert.equal(strangerBalance2, strangerBalance, "Stranger must get their tokens back");
-            assert.equal(dreamTeamBalance2, dreamTeamBalance, "DreamTeam balance must stay the same");
+            assert.equal(strangerBalance2, strangerBalance - value, "Stranger loses tokens");
+            assert.equal(dreamTeamBalance2, dreamTeamBalance + value, "DreamTeam rescues stranger's tokens");
         });
 
     });

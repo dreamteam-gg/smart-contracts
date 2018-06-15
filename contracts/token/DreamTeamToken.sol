@@ -5,7 +5,7 @@ interface tokenRecipient {
 }
 
 interface ERC20CompatibleToken {
-    function approve (address spender, uint256 value) external returns (bool);
+    function transfer (address to, uint256 value) external returns (bool);
 }
 
 /**
@@ -69,46 +69,51 @@ contract DreamTeamToken {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
     modifier rescueAccountOnly {require(msg.sender == rescueAccount); _;}
-    modifier tokenDistributionPeriodOnly {require(tokenDistributor != 0x0 && tokenDistributor == msg.sender); _;}
+    modifier tokenDistributionPeriodOnly {require(tokenDistributor == msg.sender); _;}
 
-    bytes public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n";
     enum sigStandard { typed, personal, stringHex }
     enum sigDestination { transfer, approve, approveAndCall, transferFrom }
-    bytes32 public sigDestinationTransfer = keccak256(
+
+    bytes constant public ethSignedMessagePrefix = "\x19Ethereum Signed Message:\n";
+    bytes32 constant public sigDestinationTransfer = keccak256(
         "address Token Contract Address",
         "address Sender's Address",
         "address Recipient's Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
+        "address Account which will Receive Fee",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
     ); // `transferViaSignature`: keccak256(address(this), from, to, value, fee, deadline, sigId)
-    bytes32 public sigDestinationTransferFrom = keccak256(
+    bytes32 constant public sigDestinationTransferFrom = keccak256(
         "address Token Contract Address",
         "address Address Approved for Withdraw",
         "address Account to Withdraw From",
         "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
+        "address Account which will Receive Fee",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
     ); // `transferFromViaSignature`: keccak256(address(this), signer, from, to, value, fee, deadline, sigId)
-    bytes32 public sigDestinationApprove = keccak256(
+    bytes32 constant public sigDestinationApprove = keccak256(
         "address Token Contract Address",
         "address Withdrawal Approval Address",
         "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
+        "address Account which will Receive Fee",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
     ); // `approveViaSignature`: keccak256(address(this), from, spender, value, fee, deadline, sigId)
-    bytes32 public sigDestinationApproveAndCall = keccak256( // `approveAndCallViaSignature`
+    bytes32 constant public sigDestinationApproveAndCall = keccak256(
         "address Token Contract Address",
         "address Withdrawal Approval Address",
         "address Withdrawal Recipient Address",
         "uint256 Amount to Transfer (last six digits are decimals)",
         "bytes Data to Transfer",
         "uint256 Fee in Tokens Paid to Executor (last six digits are decimals)",
+        "address Account which will Receive Fee",
         "uint256 Signature Expiration Timestamp (unix timestamp)",
         "uint256 Signature ID"
     ); // `approveAndCallViaSignature`: keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId)
@@ -259,7 +264,8 @@ contract DreamTeamToken {
      * @param from - the account giving its signature to transfer `value` tokens to `to` address
      * @param to - the account receiving `value` tokens
      * @param value - the value in tokens to transfer
-     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param fee - a fee to pay to `feeRecipient`
+     * @param feeRecipient - account which will receive fee
      * @param deadline - until when the signature is valid
      * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
@@ -270,16 +276,17 @@ contract DreamTeamToken {
         address     to,
         uint256     value,
         uint256     fee,
+        address     feeRecipient,
         uint256     deadline,
         uint256     sigId,
         bytes       sig,
         sigStandard sigStd
     ) external returns (bool) {
         requireSignature(
-            keccak256(address(this), from, to, value, fee, deadline, sigId),
+            keccak256(address(this), from, to, value, fee, feeRecipient, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.transfer
         );
-        internalDoubleTransfer(from, to, value, msg.sender, fee);
+        internalDoubleTransfer(from, to, value, feeRecipient, fee);
         return true;
     }
 
@@ -305,7 +312,8 @@ contract DreamTeamToken {
      * @param from - the account to approve withdrawal from, which signed all below parameters
      * @param spender - the account allowed to withdraw tokens from `from` address
      * @param value - the value in tokens to approve to withdraw
-     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param fee - a fee to pay to `feeRecipient`
+     * @param feeRecipient - account which will receive fee
      * @param deadline - until when the signature is valid
      * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
@@ -316,18 +324,19 @@ contract DreamTeamToken {
         address     spender,
         uint256     value,
         uint256     fee,
+        address     feeRecipient,
         uint256     deadline,
         uint256     sigId,
         bytes       sig,
         sigStandard sigStd
     ) external returns (bool) {
         requireSignature(
-            keccak256(address(this), from, spender, value, fee, deadline, sigId),
+            keccak256(address(this), from, spender, value, fee, feeRecipient, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.approve
         );
         allowance[from][spender] = value;
         emit Approval(from, spender, value);
-        internalTransfer(from, msg.sender, fee);
+        internalTransfer(from, feeRecipient, fee);
         return true;
     }
 
@@ -345,13 +354,14 @@ contract DreamTeamToken {
 
     /**
      * Same as `transferViaSignature`, but for `transferFrom`.
-     * Use case: the user wants to withdraw tokens from a smart contract or another user who allowed the user to do so.
-     * Important note: fee is subtracted from `value` before it reaches `to`.
+     * Use case: the user wants to withdraw tokens from a smart contract or another user who allowed the user to
+     * do so. Important note: the fee is subtracted from the `value`, and `to` address receives `value - fee`.
      * @param signer - the address allowed to call transferFrom, which signed all below parameters
      * @param from - the account to make withdrawal from
      * @param to - the address of the recipient
      * @param value - the value in tokens to withdraw
-     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param fee - a fee to pay to `feeRecipient`
+     * @param feeRecipient - account which will receive fee
      * @param deadline - until when the signature is valid
      * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
@@ -363,17 +373,18 @@ contract DreamTeamToken {
         address     to,
         uint256     value,
         uint256     fee,
+        address     feeRecipient,
         uint256     deadline,
         uint256     sigId,
         bytes       sig,
         sigStandard sigStd
     ) external returns (bool) { 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
         requireSignature(
-            keccak256(address(this), signer, from, to, value, fee, deadline, sigId),
+            keccak256(address(this), from, to, value, fee, feeRecipient, deadline, sigId),
             signer, deadline, sigId, sig, sigStd, sigDestination.transferFrom
         );
         allowance[from][signer] = allowance[from][signer].sub(value);
-        internalDoubleTransfer(from, to, value.sub(fee), msg.sender, fee);
+        internalDoubleTransfer(from, to, value.sub(fee), feeRecipient, fee);
         return true;
     }
 
@@ -398,11 +409,12 @@ contract DreamTeamToken {
      * @param spender - the account allowed to withdraw tokens from `from` address (in this case, smart contract only)
      * @param value - the value in tokens to approve to withdraw
      * @param extraData - additional data to pass to the `spender` smart contract
-     * @param fee - a fee to pay to transaction executor (`msg.sender`)
+     * @param fee - a fee to pay to `feeRecipient`
+     * @param feeRecipient - account which will receive fee
      * @param deadline - until when the signature is valid
      * @param sigId - signature unique ID. Signatures made with the same signature ID cannot be submitted twice
      * @param sig - signature made by `from`, which is the proof of `from`'s agreement with the above parameters
-     * @param sigStd - chosen standard for signature validation. The signer must explicitely tell which standard they use
+     * @param sigStd - chosen standard for signature validation. The signer must explicitly tell which standard they use
      */
     function approveAndCallViaSignature (
         address     from,
@@ -410,19 +422,20 @@ contract DreamTeamToken {
         uint256     value,
         bytes       extraData,
         uint256     fee,
+        address     feeRecipient,
         uint256     deadline,
         uint256     sigId,
         bytes       sig,
         sigStandard sigStd
     ) external returns (bool) {
         requireSignature(
-            keccak256(address(this), from, spender, value, extraData, fee, deadline, sigId),
+            keccak256(address(this), from, spender, value, extraData, fee, feeRecipient, deadline, sigId),
             from, deadline, sigId, sig, sigStd, sigDestination.approveAndCall
         );
         allowance[from][spender] = value;
         emit Approval(from, spender, value);
         tokenRecipient(spender).receiveApproval(from, value, this, extraData);
-        internalTransfer(from, msg.sender, fee);
+        internalTransfer(from, feeRecipient, fee);
         return true;
     } 		   	  				  	  	      		 			  		 	  	 		 	 		 		 	  	 			 	   		    	  	 			  			 	   		 	 		
 
@@ -462,9 +475,7 @@ contract DreamTeamToken {
 
         // To make the total supply rounded (no fractional part), subtract the fractional part from DreamTeam's balance
         uint256 fractionalPart = remaining.add(totalSupply) % (uint256(10) ** decimals);
-        if (fractionalPart <= remaining) {
-            remaining = remaining.sub(fractionalPart); // Remove the fractional part to round the totalSupply
-        }
+        remaining = remaining.sub(fractionalPart); // Remove the fractional part to round the totalSupply
 
         balanceOf[tokenDistributor] = balanceOf[tokenDistributor].add(remaining);
         emit Transfer(0x0, tokenDistributor, remaining);
@@ -475,14 +486,14 @@ contract DreamTeamToken {
     }
 
     /**
-     * ERC20 tokens are not designed to hold any other tokens (or Ether) on their balances. There were thousands of cases
-     * when people accidentally transfer tokens to a contract address while there is no way to get them back.
-     * This function adds a possibility to "rescue" tokens that were accidentally sent to this smart contract.
+     * ERC20 tokens are not designed to hold any other tokens (or Ether) on their balances. There were thousands
+     * of cases when people accidentally transfer tokens to a contract address while there is no way to get them
+     * back. This function adds a possibility to "rescue" tokens that were accidentally sent to this smart contract.
      * @param tokenContract - ERC20-compatible token
      * @param value - amount to rescue
      */
     function rescueLostTokens (ERC20CompatibleToken tokenContract, uint256 value) external rescueAccountOnly {
-        tokenContract.approve(rescueAccount, value);
+        tokenContract.transfer(rescueAccount, value);
     }
 
     /**
