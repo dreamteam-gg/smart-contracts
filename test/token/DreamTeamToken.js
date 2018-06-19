@@ -24,50 +24,12 @@ function getTokenSaleDistributionTable (tokenDecimals = 18) {
     }).sort((a, b) => b.value - a.value);
 }
 
-function decodeEventsFromTx (tx) {
-    if (!(tx.logs instanceof Array))
-        throw new Error("tx is not a transaction");
-    return tx.logs.reduce((obj, log) => {
-        if (!log.event) {
-            console.log("Skipped log", log);
-            return;
-        }
-        obj[log.event] = log.args;
-        return obj;
-    }, {});
-}
-
-/**
- * Note that this method will only work on TestRPC or Truffle Develop networks.
- * @param {number} minutesToForward
- */
-const forwardTime = async function (minutesToForward) { return new Promise((resolve, reject) => {
-    web3.currentProvider.sendAsync({
-        jsonrpc: '2.0',
-        method: 'evm_increaseTime',
-        params: [60 * minutesToForward],
-        id: Date.now(),
-    }, (err) => {
-        if (err)
-            reject(err);
-        web3.currentProvider.sendAsync({
-            jsonrpc: '2.0',
-            method: 'evm_mine',
-            id: Date.now(),
-        }, (err2, res) => {
-            return err2 ? reject(err2) : resolve(res)
-        });
-    });
-}) }
-
-const gasPrice = 2 * Math.pow(10, 9); // 2 GWei
-const ethToUsdRate = 700;
+const gasPrice = require("../helpers/getUsedGas").gasPrice;
+const ethToUsdRate = require("../helpers/getUsedGas").ethToUsdRate;
+const getUsedGas = require("../helpers/getUsedGas").getUsedGas;
 const blockGasLimit = 4600000 - 600000; // Give 600000 spare gas per block
 const expectedTotalSupply = 250000000;
-const getUsedGas = (tx) => `${ tx.receipt.gasUsed } gas (~$${ 
-    Math.round(tx.receipt.gasUsed * gasPrice / Math.pow(10, 18) * ethToUsdRate * 10000) / 10000
-})`;
-const infoLog = (text) => console.log(`      ⓘ ${text}`);
+const infoLog = (text) => console.log(`      ⓘ ${ text }`);
 
 contract("DTT", (accounts) => {
 
@@ -77,6 +39,7 @@ contract("DTT", (accounts) => {
     const tokenDeployerAccount = accounts[0];
     const dreamTeamAccount = accounts[1];
     const account1 = accounts[2];
+    const account2 = accounts[3];
     const strangerAccount = accounts[9];
     let token,
         decimals,
@@ -162,7 +125,7 @@ contract("DTT", (accounts) => {
 
         it("Must allow tokenDeployerAccount to mint tokens for 7 accounts", async function () {
             const accCount = 7;
-            const todo = accounts.slice(2, 2 + accCount).map(address => ({ 
+            const todo = accounts.slice(2, 2 + accCount).map(address => ({
                 address,
                 tokens: (10000 + Math.round(Math.random() * 1000)) * 10 ** decimals
             }));
@@ -188,9 +151,9 @@ contract("DTT", (accounts) => {
                 groups.push(distTable.splice(0, mintsPerTransaction));
             if (distTable.length > 0)
                 groups.push(distTable);
-            infoLog(`${ groups.length } groups are ready from the total of ${ 
-                groups.map(g => g.length).reduce((a, b) => a + b) 
-            } accounts`);
+            infoLog(`${ groups.length } groups are ready from the total of ${
+                groups.map(g => g.length).reduce((a, b) => a + b)
+                } accounts`);
             for (let i = 0; i < groups.length; ++i) {
                 const table = groups[i];
                 infoLog(`Processing a group ${ i + 1 }/${ groups.length } of ${ table.length } accounts`);
@@ -227,11 +190,11 @@ contract("DTT", (accounts) => {
                 from: tokenDeployerAccount
             });
             infoLog(`TX (lastMint) gas usage: ${ getUsedGas(tx) }`);
-            const expectedDeployerBalance = Math.floor(totalSupply * 40 / 60) 
+            const expectedDeployerBalance = Math.floor(totalSupply * 40 / 60)
                 - ((Math.floor(totalSupply * 40 / 60) + totalSupply) % Math.pow(10, decimals));
             assert.equal(
                 +(await token.balanceOf.call(tokenDeployerAccount)),
-                expectedDeployerBalance, 
+                expectedDeployerBalance,
                 `Unexpected DreamTeam balance`
             );
             infoLog(`tokenDeployerAccount gets remaining 40% tokens, ${ expectedDeployerBalance } DTT`);
@@ -389,13 +352,49 @@ contract("DTT", (accounts) => {
 
     describe("Pre-signed token transfer", () => {
 
-        let value, from, to, delegate, fee, deadline, signature, usedSigId;
+        let value, from, to, delegate, fee, deadline, signature, usedSigId, newAccount;
+
+        function getTypedDataToSign () {
+            return [{
+                type: 'address',
+                name: 'Token Contract Address',
+                value: token.address
+            }, {   
+                type: 'address',
+                name: 'Sender\'s Address',
+                value: from
+            }, {   
+                type: 'address',
+                name: 'Recipient\'s Address',
+                value: to
+            }, {   
+                type: 'uint256',
+                name: 'Amount to Transfer (last six digits are decimals)',
+                value: value
+            }, {   
+                type: 'uint256',
+                name: 'Fee in Tokens Paid to Executor (last six digits are decimals)',
+                value: fee
+            }, {
+                type: 'address',
+                name: 'Account which will Receive Fee',
+                value: delegate
+            }, {
+                type: 'uint256',
+                name: 'Signature Expiration Timestamp (unix timestamp)',
+                value: deadline
+            }, {   
+                type: 'uint256',
+                name: 'Signature ID',
+                value: usedSigId
+            }];
+        }
 
         it("Does not accept signature with expired deadline", async function () {
 
             value = 10 * 10 ** decimals;
             from = account1;
-            to = strangerAccount;
+            to = web3m.eth.accounts.create().address; // strangerAccount;
             delegate = dreamTeamAccount;
             fee = 1 * 10 ** decimals;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp - 60 * 60; // 1 hour ago
@@ -416,6 +415,25 @@ contract("DTT", (accounts) => {
 
             // Takes data from previous test
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign, from);
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_PERSONAL, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
+        it("Allows pre-signed transfer using personal sign standard (one more time)", async function () {
+
+            // Takes data from previous test
+            // deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
@@ -467,10 +485,33 @@ contract("DTT", (accounts) => {
 
             value = 4 * 10 ** decimals;
             from = account1;
-            to = strangerAccount;
+            to = web3m.eth.accounts.create().address;
             delegate = dreamTeamAccount;
             fee = 2 * 10 ** decimals - 1;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
+            const balanceFrom = +(await token.balanceOf.call(from));
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = await web3m.eth.sign(dataToSign.slice(2), from);
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_HEX_STRING, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
+        it("Allows pre-signed transfer using personal hex string sign standard (one more time)", async function () {
+
+            // value = 4 * 10 ** decimals;
+            // from = account1;
+            // to = web3m.eth.accounts.create().address;
+            // delegate = dreamTeamAccount;
+            // fee = 2 * 10 ** decimals - 1;
+            // deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             const dataToSign = web3m.utils.soliditySha3(token.address, from, to, value, fee, delegate, deadline, usedSigId = sigId++);
             const balanceFrom = +(await token.balanceOf.call(from));
             const balanceTo = +(await token.balanceOf.call(to));
@@ -501,50 +542,52 @@ contract("DTT", (accounts) => {
 
         it("Allows pre-signed transfer using sign typed data standard", async function () {
 
-            const newAccount = web3m.eth.accounts.create();
+            newAccount = web3m.eth.accounts.create();
             value = 4 * 10 ** decimals;
             from = newAccount.address;
-            to = strangerAccount;
+            // to = strangerAccount;
+            // from = account1;
+            to = web3m.eth.accounts.create().address;
             delegate = dreamTeamAccount;
             fee = 2 * 10 ** decimals - 1;
             deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
             usedSigId = sigId++;
-            const dataToSign = [{
-                type: 'address',
-                name: 'Token Contract Address',
-                value: token.address
-            }, {   
-                type: 'address',
-                name: 'Sender\'s Address',
-                value: from
-            }, {   
-                type: 'address',
-                name: 'Recipient\'s Address',
-                value: to
-            }, {   
-                type: 'uint256',
-                name: 'Amount to Transfer (last six digits are decimals)',
-                value: value
-            }, {   
-                type: 'uint256',
-                name: 'Fee in Tokens Paid to Executor (last six digits are decimals)',
-                value: fee
-            }, {
-                type: 'address',
-                name: 'Account which will Receive Fee',
-                value: delegate
-            }, {   
-                type: 'uint256',
-                name: 'Signature Expiration Timestamp (unix timestamp)',
-                value: deadline
-            }, {   
-                type: 'uint256',
-                name: 'Signature ID',
-                value: usedSigId
-            }];
-            await token.transfer(from, value + fee, { from: dreamTeamAccount });
+            const dataToSign = getTypedDataToSign();
+            await token.transfer(from, 4 * (value + fee), { from: dreamTeamAccount });
             const balanceFrom = +(await token.balanceOf.call(from));
-            assert.equal(balanceFrom, value + fee, "Account balance must be refilled");
+            assert.equal(balanceFrom, 4 * (value + fee), "Account balance must be refilled");
+            const balanceTo = +(await token.balanceOf.call(to));
+            const balanceDelegate = +(await token.balanceOf.call(delegate));
+            signature = sigUtils.signTypedData(
+                Buffer.from(newAccount.privateKey.slice(2), "hex"),
+                { data: dataToSign }
+            );
+            const tx = await token.transferViaSignature(
+                from, to, value, fee, delegate, deadline, usedSigId, signature, SIG_STANDARD_TYPED, { from: delegate }
+            );
+            infoLog(`TX (transferViaSignature) gas usage: ${ getUsedGas(tx) }`);
+            assert.equal(+(await token.balanceOf(from)), balanceFrom - value - fee, "Must subtract balance");
+            assert.equal(+(await token.balanceOf(to)), balanceTo + value, "Must add balance to recipient");
+            assert.equal(+(await token.balanceOf(delegate)), balanceDelegate + fee, "Must pay fee to delegate");
+
+        });
+
+        it("Allows pre-signed transfer using sign typed data standard (one more time)", async function () {
+
+            // const newAccount = web3m.eth.accounts.create();
+            // value = 4 * 10 ** decimals;
+            // from = newAccount.address;
+            // to = strangerAccount;
+            // from = account1;
+            // to = web3m.eth.accounts.create().address;
+            // delegate = dreamTeamAccount;
+            // fee = 2 * 10 ** decimals - 1;
+            // deadline = (await web3m.eth.getBlock(`latest`)).timestamp + 60 * 60 * 24 * 7; // +7 days
+            usedSigId = sigId++;
+            const dataToSign = getTypedDataToSign();
+            // await token.transfer(from, value + fee, { from: dreamTeamAccount });
+            const balanceFrom = +(await token.balanceOf.call(from));
+            // assert.equal(balanceFrom, value + fee, "Account balance must be refilled");
             const balanceTo = +(await token.balanceOf.call(to));
             const balanceDelegate = +(await token.balanceOf.call(delegate));
             signature = sigUtils.signTypedData(
