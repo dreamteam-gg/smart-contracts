@@ -16,50 +16,20 @@ const teamMember1 = 4;
 const anonymous = 8;
 const hacker = 9;
 
-const pass = () => {};
+const pass = () => { };
 const weeksToMinutes = (weeks) => weeks * 7 * 24 * 60;
 
-function decodeEventsFromTx (tx) {
-    if (!(tx.logs instanceof Array))
-        throw new Error("tx is not a transaction");
-    return tx.logs.reduce((obj, log) => {
-        if (!log.event) {
-            console.log("Skipped log", log);
-            return;
-        }
-        obj[log.event] = log.args;
-        return obj;
-    }, {});
-}
+const decodeEventsFromTx = require("../helpers/decodeEventsFromTx");
 
 /**
  * Note that this method will only work on TestRPC or Truffle Develop networks.
  * @param {number} minutesToForward
  */
-const forwardTime = async function (minutesToForward) { return new Promise((resolve, reject) => {
-    web3.currentProvider.sendAsync({
-        jsonrpc: '2.0',
-        method: 'evm_increaseTime',
-        params: [60 * minutesToForward],
-        id: Date.now(),
-    }, (err) => {
-        if (err)
-            reject(err);
-        web3.currentProvider.sendAsync({
-            jsonrpc: '2.0',
-            method: 'evm_mine',
-            id: Date.now(),
-        }, (err2, res) => {
-            return err2 ? reject(err2) : resolve(res)
-        });
-    });
-}) }
+const forwardTime = require("../helpers/forwardTime").forwardTime;
 
-const gasPrice = 2 * Math.pow(10, 9); // 2 GWei
-const ethToUsdRate = 900; // 1 ETH = $900
-const getUsedGas = (tx) => `${ tx.receipt.gasUsed } gas (~$${ 
-    Math.round(tx.receipt.gasUsed * gasPrice / Math.pow(10, 18) * ethToUsdRate * 10000) / 10000
-})`;
+const gasPrice = require("../helpers/getUsedGas").gasPrice;
+const ethToUsdRate = require("../helpers/getUsedGas").ethToUsdRate;
+const getUsedGas = require("../helpers/getUsedGas").getUsedGas;
 
 contract("TeamContracts", (accounts) => {
 
@@ -103,14 +73,14 @@ contract("TeamContracts", (accounts) => {
             });
         }
         return {
-            balance: +balance, 
-            owner, 
-            members 
+            balance: +balance,
+            owner,
+            members
         };
     }
 
     async function createTeam (teamOwner) {
-        
+
         const txReceipt = await teamContracts.createTeam(teamOwner, {
             from: accounts[DreamTeam]
         });
@@ -119,41 +89,43 @@ contract("TeamContracts", (accounts) => {
 
     }
 
-    function addMemberTestCaseFactory ({ team, agreementWeeks, weeklyRate, memberAccount, singleTermAgreement }) { return async function () {
-            
-        const weeks = agreementWeeks;
-        expectedBalanceToLockOnMember1 = weeks * weeklyRate;
+    function addMemberTestCaseFactory ({ team, agreementWeeks, weeklyRate, memberAccount, singleTermAgreement }) {
+        return async function () {
 
-        assert.ok(expectedTeams[team].balance >= expectedBalanceToLockOnMember1, "Test structure fail: first team must have at least something to give to the first member");
+            const weeks = agreementWeeks;
+            expectedBalanceToLockOnMember1 = weeks * weeklyRate;
 
-        try {
-            const tx = await teamContracts.addMember(
-                expectedTeams[team].id,
-                memberAccount,
-                weeksToMinutes(weeks),
-                expectedBalanceToLockOnMember1,
-                !!singleTermAgreement,
-                ++memberContractId,
-                { from: accounts[DreamTeam] }
-            );
-            console.log(`      ⓘ teamContracts.addMember: ${ getUsedGas(tx) }`);
-        } catch (e) {
-            assert.fail("DreamTeam cannot add new team member; " + e);
+            assert.ok(expectedTeams[team].balance >= expectedBalanceToLockOnMember1, "Test structure fail: first team must have at least something to give to the first member");
+
+            try {
+                const tx = await teamContracts.addMember(
+                    expectedTeams[team].id,
+                    memberAccount,
+                    weeksToMinutes(weeks),
+                    expectedBalanceToLockOnMember1,
+                    !!singleTermAgreement,
+                    ++memberContractId,
+                    { from: accounts[DreamTeam] }
+                );
+                console.log(`      ⓘ teamContracts.addMember: ${ getUsedGas(tx) }`);
+            } catch (e) {
+                assert.fail("DreamTeam cannot add new team member; " + e);
+            }
+
+            expectedTeams[team].balance -= expectedBalanceToLockOnMember1;
+            expectedTeams[team].members += 1;
+
+            const teamData = await getTeamParsed(expectedTeams[team].id);
+
+            assert.equal(teamData.balance, expectedTeams[team].balance, "Balance should be updated (new amount must be locked)");
+            assert.equal(teamData.members.length, expectedTeams[team].members, "Team now must have 1 member");
+            assert.equal(teamData.members[expectedTeams[team].members - 1].account, memberAccount, "Team member must have expected address");
+            expectedTeams[team].member[teamData.members.length - 1] = {
+                contractId: memberContractId
+            };
+
         }
-
-        expectedTeams[team].balance -= expectedBalanceToLockOnMember1;
-        expectedTeams[team].members += 1;
-
-        const teamData = await getTeamParsed(expectedTeams[team].id);
-        
-        assert.equal(teamData.balance, expectedTeams[team].balance, "Balance should be updated (new amount must be locked)");
-        assert.equal(teamData.members.length, expectedTeams[team].members, "Team now must have 1 member");
-        assert.equal(teamData.members[expectedTeams[team].members - 1].account, memberAccount, "Team member must have expected address");
-        expectedTeams[team].member[teamData.members.length - 1] = {
-            contractId: memberContractId
-        };
-
-    }}
+    }
 
     before(async function () {
         console.log(
@@ -167,17 +139,29 @@ contract("TeamContracts", (accounts) => {
 
     describe("Token checkup", () => {
 
+        it("Initial multi-mint in token", async function () {
+            const balance = +(await token.balanceOf.call(accounts[DreamTeam], {
+                from: accounts[DreamTeam]
+            }));
+            if (balance >= initialSupply)
+                return assert.ok(true);
+            await token.multiMint([accounts[DreamTeam]], [initialSupply - balance], {
+                from: accounts[deployer]
+            });
+            assert.ok(true);
+        });
+
         it("DreamTeam must own all the tokens", async function () {
             const balance = await token.balanceOf.call(accounts[DreamTeam], {
                 from: accounts[DreamTeam]
             });
-            assert.equal(balance, initialSupply, "DreamTeam must own initialSupply tokens");
+            assert.equal(+balance, initialSupply, "DreamTeam must own initialSupply tokens");
         });
 
     });
 
     describe("Initial deployment", () => {
-        
+
         it("Contracts must be deployed correctly", () => {
             assert(storage && storage.address, "Storage must be deployed");
             assert(token && token.address, "Token must be deployed");
@@ -218,7 +202,7 @@ contract("TeamContracts", (accounts) => {
     describe("Team Creation", () => {
 
         it("Must not allow anyone to create teams", async function () {
-            
+
             let caught = false;
             try {
                 await teamContracts.createTeam(accounts[hacker], {
@@ -301,15 +285,15 @@ contract("TeamContracts", (accounts) => {
         };
 
         it(
-            "Must allow DreamTeam to refill team balance", 
+            "Must allow DreamTeam to refill team balance",
             factoryRefillBalance(accounts[DreamTeam], teamInitialTokenReward)
         );
         it(
-            "Must allow team owner to refill team balance of their team", 
+            "Must allow team owner to refill team balance of their team",
             factoryRefillBalance(accounts[teamOwner1], 50)
         );
         it(
-            "Must allow anyone to refill team balance of the team", 
+            "Must allow anyone to refill team balance of the team",
             factoryRefillBalance(accounts[anonymous], 50)
         );
 
@@ -331,7 +315,7 @@ contract("TeamContracts", (accounts) => {
 
         });
 
-        it("Must allow DreamTeam to add team member", addMemberTestCaseFactory({ 
+        it("Must allow DreamTeam to add team member", addMemberTestCaseFactory({
             team: 0,
             agreementWeeks: 2,
             weeklyRate: 50,
@@ -357,8 +341,8 @@ contract("TeamContracts", (accounts) => {
 
         it("Must allow DreamTeam to remove team members", async function () {
             const tx = await teamContracts.removeMember(
-                expectedTeams[0].id, 
-                expectedTeams[0].member[expectedTeams[0].members - 1].contractId, 
+                expectedTeams[0].id,
+                expectedTeams[0].member[expectedTeams[0].members - 1].contractId,
                 {
                     from: accounts[DreamTeam]
                 }
@@ -370,8 +354,8 @@ contract("TeamContracts", (accounts) => {
             expectedTeams[0].member.pop();
             assert.equal(teamData.members.length, 0, "Must not have any members");
             assert.equal(
-                teamData.balance, 
-                expectedTeams[0].balance, 
+                teamData.balance,
+                expectedTeams[0].balance,
                 "Balance must be refunded to a team as team member didn't spend even a single day in a team"
             );
         });
@@ -387,8 +371,8 @@ contract("TeamContracts", (accounts) => {
             console.log(`      ⓘ teamContracts.batchPayout (idle): ${ getUsedGas(tx) }`);
             const teamData = await getTeamParsed(expectedTeams[0].id);
             assert.equal(
-                teamData.balance, 
-                expectedTeams[0].balance, 
+                teamData.balance,
+                expectedTeams[0].balance,
                 "Payout must not yet change a team balance, as no one is paid out yet"
             );
         });
@@ -419,7 +403,7 @@ contract("TeamContracts", (accounts) => {
         });
 
         it(`Time forward, +${ agreementWeeks } weeks`, async function () {
-            await forwardTime(agreementWeeks * 7 * 24 * 60);
+            await forwardTime(agreementWeeks * 7 * 24 * 60 * 60);
             assert.ok(true);
         });
 
@@ -485,7 +469,7 @@ contract("TeamContracts", (accounts) => {
         });
 
         it(`Time forward, +${ agreementWeeks } weeks`, async function () {
-            await forwardTime(agreementWeeks * 7 * 24 * 60);
+            await forwardTime(agreementWeeks * 7 * 24 * 60 * 60);
             assert.ok(true);
         });
 
