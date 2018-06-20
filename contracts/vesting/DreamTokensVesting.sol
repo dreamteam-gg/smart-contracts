@@ -39,14 +39,14 @@ library SafeMath {
 /**
  * DreamTeam tokens vesting contract. 
  *
- * According to DreamTeam token distribution structure, there are two parties that should
- * be provided with corresponding token amounts during 2 years after TGE:
+ * According to the DreamTeam token distribution structure, there are two parties that should
+ * be provided with corresponding token amounts during the 2 years after TGE:
  *      Teams and Tournament Organizers: 15%
  *      Team and Early Investors: 10%
  *
  * The DreamTeam "Vesting" smart contract should be in place to ensure meeting the token sale commitments.
  *
- * Two instances of contract will be deployed for holding tokens. 
+ * Two instances of the contract will be deployed for holding tokens. 
  * First instance for "Teams and Tournament Organizers" tokens and second for "Team and Early Investors"
  */
 contract DreamTokensVesting {
@@ -78,7 +78,7 @@ contract DreamTokensVesting {
 
     /**
      * Starting timestamp of the first stage of vesting (19 June 2018).
-     * Will be used as starting point for all dates calculations.
+     * Will be used as a starting point for all dates calculations.
      */
     uint256 public vestingStartTimestamp = 1529366400;
 
@@ -106,10 +106,10 @@ contract DreamTokensVesting {
     }
 
     /**
-     * We are filling vesting stages array right when contract will be deployed.
+     * We are filling vesting stages array right when the contract is deployed.
      *
      * @param token Address of DreamToken that will be locked on contract.
-     * @param withdraw Address of tokens receiver when it will be unlocked.
+     * @param withdraw Address of tokens receiver when it is unlocked.
      */
     constructor (ERC20TokenInterface token, address withdraw) public {
         dreamToken = token;
@@ -125,13 +125,13 @@ contract DreamTokensVesting {
     }
 
     /**
-     * Calculate tokens amount that will be send to withdrawAddress
+     * Calculate tokens amount that is sent to withdrawAddress.
      * 
-     * @return Amount of tokens that could be sent.
+     * @return Amount of tokens that can be sent.
      */
     function getAvailableTokensToWithdraw () public view returns (uint256 tokensToSend) {
         uint256 tokensUnlockedPercentage = getTokensUnlockedPercentage();
-        // In case of stuck tokens we allowing to widthraw them all after vesting period ends.
+        // In the case of stuck tokens we allow the withdrawal of them all after vesting period ends.
         if (tokensUnlockedPercentage >= 100) {
             tokensToSend = dreamToken.balanceOf(this);
         } else {
@@ -186,7 +186,7 @@ contract DreamTokensVesting {
     }
 
     /**
-     * Set initial tokens balance when making a first withdraw.
+     * Set initial tokens balance when making the first withdrawal.
      */
     function setInitialTokensBalance () private {
         initialTokensBalance = dreamToken.balanceOf(this);
@@ -209,11 +209,11 @@ contract DreamTokensVesting {
     }
 
     /**
-     * Calculate tokens available for withdraw.
+     * Calculate tokens available for withdrawal.
      *
-     * @param tokensUnlockedPercentage Percent of tokens that allowed to be sent.
+     * @param tokensUnlockedPercentage Percent of tokens that are allowed to be sent.
      *
-     * @return Amount of tokens that could be sent according to provided percentage.
+     * @return Amount of tokens that can be sent according to provided percentage.
      */
     function getTokensAmountAllowedToWithdraw (uint256 tokensUnlockedPercentage) private view returns (uint256) {
         uint256 totalTokensAllowedToWithdraw = initialTokensBalance.mul(tokensUnlockedPercentage).div(100);
