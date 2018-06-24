@@ -28,17 +28,18 @@ trigger payouts, team members themselves can trigger them, by using any services
 
 ## Smart Contracts Source Code (entry points)
 
-+ [DreamTeam Test Token (DreamTeam Token)](contracts/token/DreamTeamToken.sol) (potential DreamTeam token contract in Ethereum test network)
-+ [DreamTeam Test Token (TDTT)](contracts/token/TDTT.sol) (This version of the test token was used on the Ethereum test network until 5/7/2018)
-+ [Team Contracts Manager Contract](contracts/teams/TeamContracts.sol) (smart contract for team compensation payments)
++ [DreamTeam Token (DreamTeam Token)](contracts/token/DreamTeamToken.sol)
++ [Dream Token Vesting](contracts/vesting/DreamTokensVesting.sol) ([team and early investors](contracts/vesting/TeamAndEarlyInvestorsVesting.sol) and [pro teams and tournament organizers](contracts/vesting/TeamsAndTournamentOrganizersVesting.sol) vesting smart contracts)
++ [Team Contracts Manager Contract](contracts/teams/TeamContracts.sol) (smart contract for team payments management)
++ [DreamTeam Old Test Token (TDTT)](contracts/token/TDTT.sol) (This version of the test token was used on the Ethereum test network until 5/7/2018)
 
 ## Smart Contract Audits
 
-+ TeamContracts, DreamTeam Test Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-smart-contract-for-players-compensation/)
 + DreamTeam Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-token-audit/)
++ TeamContracts, DreamTeam Test Token: [Coinfabrik](https://blog.coinfabrik.com/dreamteam-smart-contract-for-players-compensation/)
 
 ## Smart Contract Addresses
 
-+ Test TeamContracts: [0x7ddb3d916877366b0cce9e034c0b748773301308](https://ropsten.etherscan.io/address/0x7ddb3d916877366b0cce9e034c0b748773301308)
-+ DreamTeam Test Token (DreamTeam Token): [0xcad9c6677f51b936408ca3631220c9e45a9af0f6](https://ropsten.etherscan.io/token/0xcad9c6677f51b936408ca3631220c9e45a9af0f6)
-+ DreamTeam Test Token (TDTT): [0x671c81d8731f9582f17e7519f46243040e7d9642](https://ropsten.etherscan.io/token/0x671c81d8731f9582f17e7519f46243040e7d9642)
++ DREAM (DreamTeam Token): [0x82f4dED9Cec9B5750FBFf5C2185AEe35AfC16587](https://etherscan.io/token/0x82f4ded9cec9b5750fbff5c2185aee35afc16587)
++ Pro Teams and Tournament Organizers Vesting Smart Contract: [0xEF50320525251339128b0C7970284E5032142365](https://etherscan.io/address/0xef50320525251339128b0c7970284e5032142365)
++ Team and Early Investors Vesting Smart Contract: [0xff595b6F3C6929FcfCF06F8dc3f46AefA21647f7](https://etherscan.io/address/0xff595b6f3c6929fcfcf06f8dc3f46aefa21647f7)
