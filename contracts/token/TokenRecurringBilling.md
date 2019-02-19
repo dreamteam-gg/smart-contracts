@@ -18,9 +18,12 @@ Table of Contents
 ## Smart Contract Addresses
 
 **Mainnet:**
+
 + [0xDCc90D21186e9c1B60439FdBf88f0f14ad3A7355: Recurring Billing Smart Contract Factory](https://etherscan.io/address/0xdcc90d21186e9c1b60439fdbf88f0f14ad3a7355#writeContract)
 + [0x9dF38BdF603b36B8FE8040De760dFbB84cCeFa6d: Recurring Billing Smart Contract (for DREAM token)](https://etherscan.io/address/0x9df38bdf603b36b8fe8040de760dfbb84ccefa6d#readContract)
+
 **Testnet (Ropsten):**
+
 + [Recurring Billing Smart Contract Factory](https://ropsten.etherscan.io/address/0x80891b1fcb7f47ac1f5e423b092bed9dd1ed2be7#writeContract)
 
 Please create an issue/pull request regarding deploying recurring billing smart contract factories for any other networks.
